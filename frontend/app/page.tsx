@@ -23,10 +23,10 @@ export default function Home() {
     setError('');
     setVideoUrl('');
     try {
-      const response = await axios.post('http://localhost:5000/generate', { prompt });
+      const response = await axios.post('https://anime2d.onrender.com/generate', { prompt });
       // Ensure the URL is properly constructed
       const videoPath = response.data.videoUrl;
-      const fullUrl = `http://localhost:5000${videoPath}`;
+      const fullUrl = `https://anime2d.onrender.com${videoPath}`;
       console.log('Video URL:', fullUrl); // Debug log
       setVideoUrl(fullUrl);
     } catch (err: any) {
