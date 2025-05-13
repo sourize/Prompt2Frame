@@ -32,10 +32,10 @@ def execute_manim_code(code: str, scene_name: str, output_dir: str = "media/vide
     # Render via Manim
     cmd = [
         "manim", str(scene_py), scene_name,
-        "-qm",            # medium quality; REMOVED -p to prevent auto-opening in VLC
+        "-ql",            # low quality for faster rendering and less memory usage
         "--disable_caching",
         "--media_dir", str(base),
-        "--output_file", str(run_dir / f"{scene_name}.mp4")  # Specify output file explicitly
+        "--output_file", str(output_file)
     ]
     print(f"Running command: {' '.join(cmd)}")
     result = subprocess.run(cmd, capture_output=True, text=True)
