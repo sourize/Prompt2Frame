@@ -5,9 +5,8 @@ import { useState, useRef } from 'react';
 import axios from 'axios';
 
 const examples = [
-  "A bouncing ball with a shadow",
-  "A rotating cube with changing colors",
-  "A character walking from left to right"
+  "A blue ball bouncing with a scaling shadow",
+  "A rotating cube with changing colors"
 ];
 
 export default function Home() {
@@ -55,9 +54,9 @@ export default function Home() {
       >
         <div className="flex flex-col items-center mb-4">
           <div className="w-16 h-16 rounded-full bg-gradient-to-tr from-primary to-secondary flex items-center justify-center text-3xl font-bold mb-2 select-none shadow-lg">
-            <span role="img" aria-label="logo">🎬</span>
+            <span role="img" aria-label="logo">🎞️</span>
           </div>
-          <h1 className="text-3xl md:text-4xl font-extrabold text-center mb-1 tracking-tight">Text-to-Animation (Miaim)</h1>
+          <h1 className="text-3xl md:text-4xl font-extrabold text-center mb-1 tracking-tight">Prompt2Frame</h1>
           <motion.p
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
@@ -66,6 +65,17 @@ export default function Home() {
           >
             Crafting Intelligent Animations from Text
           </motion.p>
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            transition={{ delay: 0.7 }}
+            className="text-center text-gray-500 text-sm mt-10 space-y-2"
+          >
+            <p>• Wait for a minute since the backend gets into sleep mode after inactivity</p>
+            <p>• If you get an error, refresh the browser and retry</p>
+            <p>• The animation isn't exact since it's using a smaller LLM, but I will try upgrading it</p>
+            <p>!Thanks for using Prompt2Frame!</p>
+          </motion.div>
         </div>
       </motion.div>
 
@@ -150,7 +160,33 @@ export default function Home() {
 
       {/* Footer */}
       <footer className="text-center text-gray-500 text-sm mb-4">
-        Made with <span className="text-pink-400">❤️</span> by Sourish
+        Made with <span className="text-pink-400">❤️</span> by{' '}
+        <a 
+          href="https://x.com/sourize_" 
+          target="_blank" 
+          rel="noopener noreferrer"
+          className="text-primary hover:text-secondary transition-colors"
+        >
+          Sourish
+        </a>
+        {' • '}
+        <a 
+          href="https://github.com/sourize" 
+          target="_blank" 
+          rel="noopener noreferrer"
+          className="text-primary hover:text-secondary transition-colors"
+        >
+          GitHub
+        </a>
+        {' • '}
+        <a 
+          href="https://sourish.xyz" 
+          target="_blank" 
+          rel="noopener noreferrer"
+          className="text-primary hover:text-secondary transition-colors"
+        >
+          Portfolio
+        </a>
       </footer>
     </div>
   );
