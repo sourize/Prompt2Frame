@@ -11,7 +11,7 @@ if not GROQ_API_KEY:
     raise RuntimeError("Please set GROQ_API_KEY in your environment or .env file")
 
 client = Groq(api_key=GROQ_API_KEY)
-MODEL_NAME = "llama-3.3-70b-versatile"
+MODEL_NAME = "llama3-70b-8192"
 
 SYSTEM_PROMPT = (
     "You are a code generator for Manim animations. Your task is to generate Python code that creates simple 2D animations using Manim. "
