@@ -11,7 +11,7 @@ Transform text descriptions into beautiful animations using AI and Manim.
 
 ## 🌐 Live Demo
 
-Visit [Prompt2Frame](https://prompt2frame.vercel.com) to try it out!
+Visit [Prompt2Frame](https://prompt2frame.vercel.app) to try it out!
 
 ## 🛠️ Tech Stack
 
