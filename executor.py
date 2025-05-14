@@ -32,7 +32,7 @@ def execute_manim_code(code: str, scene_name: str, output_dir: str = "media/vide
     # Render via Manim
     cmd = [
         "manim", str(scene_py), scene_name,
-        "-ql",            # low quality for faster rendering and less memory usage
+        "-ql",            # low quality for faster rendering and less memory usage since render supports small storage.
         "--disable_caching",
         "--media_dir", str(base),
         "--output_file", str(output_file)

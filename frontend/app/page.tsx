@@ -23,13 +23,13 @@ export default function Home() {
     setVideoUrl('');
     try {
       const response = await axios.post('https://anime2d.onrender.com/generate', { prompt });
-      // Ensure the URL is properly constructed
+
       const videoPath = response.data.videoUrl;
       const fullUrl = `https://anime2d.onrender.com${videoPath}`;
-      console.log('Video URL:', fullUrl); // Debug log
+      console.log('Video URL:', fullUrl);
       setVideoUrl(fullUrl);
     } catch (err: any) {
-      console.error('Error:', err); // Debug log
+      console.error('Error:', err);
       setError(err.response?.data?.error || 'Failed to generate animation. Please try again.');
     } finally {
       setLoading(false);
@@ -37,7 +37,7 @@ export default function Home() {
   };
 
   const handleVideoError = (e: React.SyntheticEvent<HTMLVideoElement, Event>) => {
-    console.error('Video error:', e); // Debug log
+    console.error('Video error:', e);
     setError('Failed to load video. Please try again.');
   };
 
@@ -73,8 +73,7 @@ export default function Home() {
           >
             <p>• Wait for a minute since the backend gets into sleep mode after inactivity</p>
             <p>• If you get an error, refresh the browser and retry</p>
-            <p>• The animation isn't exact since it's using a smaller LLM, but I will try upgrading it</p>
-            <p>!Thanks for using Prompt2Frame!</p>
+            <p>• Thanks for using Prompt2Frame •</p>
           </motion.div>
         </div>
       </motion.div>

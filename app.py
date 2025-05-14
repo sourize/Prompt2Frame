@@ -32,7 +32,6 @@ def generate_animation():
         scene_name = match.group(1)
 
         video_path = execute_manim_code(code, scene_name)
-        # Get the relative path from the media/videos directory
         media_dir = Path("media/videos").resolve()
         video_path_obj = Path(video_path).resolve()
         relative_path = video_path_obj.relative_to(media_dir)
