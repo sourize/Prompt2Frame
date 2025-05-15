@@ -1,7 +1,7 @@
 ### generator.py
 
 import os
-from groq import Groq
+import groq
 from dotenv import load_dotenv
 
 load_dotenv()
@@ -11,7 +11,7 @@ if not GROQ_API_KEY:
     raise RuntimeError("Please set GROQ_API_KEY in your environment or .env file")
 
 # Initialize Groq client with minimal configuration
-client = Groq(
+client = groq.Client(
     api_key=GROQ_API_KEY,
     base_url="https://api.groq.com/v1"
 )
