@@ -9,8 +9,8 @@ from werkzeug.exceptions import HTTPException
 import psutil
 from flask_caching import Cache
 
-from .generator import generate_manim_code
-from .executor import execute_manim_code
+from generator import generate_manim_code
+from executor import execute_manim_code
 
 load_dotenv()
 app = Flask(__name__)
