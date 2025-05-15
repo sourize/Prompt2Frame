@@ -5,8 +5,8 @@ import { useState, useRef } from 'react';
 import axios from 'axios';
 
 const examples = [
-  "A blue ball bouncing with a scaling shadow",
-  "A rotating cube with changing colors"
+  "Draw a red circle and transform it into a square",
+  "Draw a Blue Circle and transform it into a triangle",
 ];
 
 export default function Home() {
@@ -65,6 +65,17 @@ export default function Home() {
           >
             Crafting Intelligent Animations from Text
           </motion.p>
+          <motion.p
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            transition={{ delay: 0.6 }}
+            className="text-center text-gray-500 text-sm mt-4 max-w-md"
+          >
+            Transform your ideas into mathematical animations. Create geometric shapes, 
+            morphing transformations, neural networks, and mathematical concepts. 
+            From simple circles to complex mathematical visualizations, bring your 
+            mathematical ideas to life through elegant animations.
+          </motion.p>
           <motion.div
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
@@ -73,7 +84,6 @@ export default function Home() {
           >
             <p>• Wait for a minute since the backend gets into sleep mode after inactivity</p>
             <p>• If you get an error, refresh the browser and retry</p>
-            <p>• Thanks for using Prompt2Frame •</p>
           </motion.div>
         </div>
       </motion.div>
@@ -149,6 +159,7 @@ export default function Home() {
               <source src={videoUrlWithCacheBust} type="video/mp4" />
               Your browser does not support the video tag.
             </video>
+            <p className="text-center text-gray-500 text-sm mt-4">• Thanks for using Prompt2Frame •</p>
           </div>
         ) : (
           <div className="text-gray-500 text-center w-full">
