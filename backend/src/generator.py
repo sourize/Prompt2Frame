@@ -10,7 +10,11 @@ GROQ_API_KEY = os.getenv("GROQ_API_KEY")
 if not GROQ_API_KEY:
     raise RuntimeError("Please set GROQ_API_KEY in your environment or .env file")
 
-client = Groq(api_key=GROQ_API_KEY)
+# Initialize Groq client with minimal configuration
+client = Groq(
+    api_key=GROQ_API_KEY,
+    base_url="https://api.groq.com/v1"
+)
 MODEL_NAME = "llama3-70b-8192"
 
 SYSTEM_PROMPT = (
