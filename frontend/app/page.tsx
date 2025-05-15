@@ -163,7 +163,7 @@ export default function Home() {
               Your browser does not support the video tag.
             </video>
             <div className="mt-6 text-center">
-              <p className="text-gray-400 text-sm font-medium tracking-wide">
+              <p className="text-gray-400 text-sm font-medium tracking-wide mb-4">
                 Thanks for using{' '}
                 <span className="text-primary font-semibold">Prompt2Frame</span>
               </p>
