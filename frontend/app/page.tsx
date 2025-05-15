@@ -162,7 +162,12 @@ export default function Home() {
               <source src={videoUrl} type="video/mp4" />
               Your browser does not support the video tag.
             </video>
-            <p className="text-center text-gray-500 text-sm mt-4">• Thanks for using Prompt2Frame •</p>
+            <div className="mt-6 text-center">
+              <p className="text-gray-400 text-sm font-medium tracking-wide">
+                Thanks for using{' '}
+                <span className="text-primary font-semibold">Prompt2Frame</span>
+              </p>
+            </div>
           </div>
         ) : (
           <div className="text-gray-500 text-center w-full">
