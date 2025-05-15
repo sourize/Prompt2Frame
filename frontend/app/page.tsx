@@ -21,11 +21,14 @@ export default function Home() {
     setLoading(true);
     setError('');
     setVideoUrl('');
+    if (videoRef.current) {
+      videoRef.current.load(); // Force video reload
+    }
     try {
       const response = await axios.post('https://anime2d.onrender.com/generate', { prompt });
 
       const videoPath = response.data.videoUrl;
-      const fullUrl = `https://anime2d.onrender.com${videoPath}`;
+      const fullUrl = `https://anime2d.onrender.com${videoPath}?t=${Date.now()}`; // Add timestamp to URL
       console.log('Video URL:', fullUrl);
       setVideoUrl(fullUrl);
     } catch (err: any) {
@@ -40,8 +43,6 @@ export default function Home() {
     console.error('Video error:', e);
     setError('Failed to load video. Please try again.');
   };
-
-  const videoUrlWithCacheBust = videoUrl ? `${videoUrl}?t=${Date.now()}` : '';
 
   return (
     <div className="min-h-screen flex flex-col justify-center items-center bg-gradient-to-b from-[#18181b] to-[#23272f] px-2">
@@ -149,14 +150,16 @@ export default function Home() {
           <div className="rounded-xl overflow-hidden bg-surface w-full">
             <video
               ref={videoRef}
-              src={videoUrlWithCacheBust}
+              src={videoUrl}
               controls
               playsInline
               className="w-full rounded-xl"
               onError={handleVideoError}
-              key={videoUrlWithCacheBust} // Force re-render when URL changes
+              key={videoUrl} // Force re-render when URL changes
+              autoPlay={false}
+              preload="auto"
             >
-              <source src={videoUrlWithCacheBust} type="video/mp4" />
+              <source src={videoUrl} type="video/mp4" />
               Your browser does not support the video tag.
             </video>
             <p className="text-center text-gray-500 text-sm mt-4">• Thanks for using Prompt2Frame •</p>

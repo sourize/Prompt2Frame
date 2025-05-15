@@ -1,6 +1,6 @@
 ### app.py
 
-from flask import Flask, request, jsonify, send_from_directory, g
+from flask import Flask, request, jsonify, send_from_directory, g, make_response
 from flask_cors import CORS
 from dotenv import load_dotenv
 import os, re, time
@@ -20,10 +20,12 @@ CORS(app)
 media_dir = Path("media/videos")
 media_dir.mkdir(parents=True, exist_ok=True)
 
+# Configure cache with shorter timeout and filesystem storage
 cache = Cache(app, config={
     'CACHE_TYPE': 'filesystem',
     'CACHE_DIR': 'cache',
-    'CACHE_DEFAULT_TIMEOUT': 300
+    'CACHE_DEFAULT_TIMEOUT': 60,  # 1 minute cache timeout
+    'CACHE_THRESHOLD': 100  # Maximum number of items the cache will store
 })
 
 def check_system_resources():
@@ -35,7 +37,6 @@ def check_system_resources():
     return True
 
 @app.route("/generate", methods=["POST"])
-@cache.memoize(timeout=300)
 def generate_animation():
     payload = request.get_json(force=True)
     prompt = payload.get("prompt", "").strip()
@@ -43,6 +44,14 @@ def generate_animation():
         return jsonify({"error": "Prompt is required"}), 400
 
     try:
+        # Generate unique cache key based on prompt
+        cache_key = f"video_{hash(prompt)}_{int(time.time())}"
+        
+        # Check if we have a cached response
+        cached_response = cache.get(cache_key)
+        if cached_response:
+            return cached_response
+
         code = generate_manim_code(prompt)
         match = re.search(r"class\s+(\w+)\(Scene\)", code)
         if not match:
@@ -56,10 +65,14 @@ def generate_animation():
         video_url = f"/media/videos/{relative_path.as_posix()}"
         print(f"Generated video URL: {video_url}")
 
-        return jsonify({
+        response = jsonify({
             "videoUrl": video_url,
             "code": code
-        }), 200
+        })
+        
+        # Cache the response
+        cache.set(cache_key, response)
+        return response, 200
 
     except Exception as err:
         app.logger.error("Generation error", exc_info=err)
@@ -67,7 +80,14 @@ def generate_animation():
 
 @app.route('/media/videos/<path:filename>')
 def serve_video(filename):
-    return send_from_directory('media/videos', filename)
+    response = make_response(send_from_directory('media/videos', filename))
+    
+    # Add cache control headers
+    response.headers['Cache-Control'] = 'no-store, no-cache, must-revalidate, max-age=0'
+    response.headers['Pragma'] = 'no-cache'
+    response.headers['Expires'] = '0'
+    
+    return response
 
 @app.route('/health')
 def health_check():
