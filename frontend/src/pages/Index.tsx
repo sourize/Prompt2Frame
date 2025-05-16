@@ -262,7 +262,7 @@ const Index = () => {
                     <div className="p-3 rounded-lg bg-amber-500/10 border border-amber-500/30 flex items-start gap-2">
                       <AlertCircle size={18} className="text-amber-500 mt-0.5 flex-shrink-0" />
                       <p className="text-xs text-muted-foreground">
-                        <strong className="font-medium text-amber-500">Important:</strong> Keep prompts concise and simple - the backend only handles basic geometric animations and transformations.
+                        <strong className="font-medium text-amber-500">Important:</strong> The backend has limited capacity. Keep prompts concise and avoid complex requests. The system works best with simple geometric animations and basic transformations.
                       </p>
                     </div>
                     {/* Warning about backend limitations */}
