@@ -32,12 +32,14 @@ def execute_manim_code(code: str, scene_name: str, output_dir: str = "media/vide
         
         # Render via Manim
         cmd = [
-            "manim", str(scene_py), scene_name,
-            "-ql",            # low quality for faster rendering and less memory usage
+            "manim", "render",  # Explicitly use render command
+            str(scene_py),
+            scene_name,
+            "--quality", "low",  # Use --quality instead of -ql to avoid conflicts
             "--disable_caching",
             "--media_dir", str(base),
             "--output_file", str(output_file),
-            "--no_preview"    # Disable preview to save resources
+            "--preview", "false"  # Correct way to disable preview
         ]
         print(f"Running command: {' '.join(cmd)}")
         result = subprocess.run(cmd, capture_output=True, text=True, timeout=300)  # 5 minute timeout
