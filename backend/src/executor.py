@@ -35,7 +35,7 @@ def execute_manim_code(code: str, scene_name: str, output_dir: str = "media/vide
             "manim", "render",  # Explicitly use render command
             str(scene_py),
             scene_name,
-            "--quality", "low",  # Use --quality instead of -ql to avoid conflicts
+            "-ql",  # Use -ql for low quality (equivalent to --quality l)
             "--disable_caching",
             "--media_dir", str(base),
             "--output_file", str(output_file),
