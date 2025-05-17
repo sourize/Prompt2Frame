@@ -1,110 +1,135 @@
 # src/app.py
+
 import os
 import re
 import time
+import logging
 import psutil
+
 from pathlib import Path
 from dotenv import load_dotenv
-from fastapi import FastAPI, HTTPException, Request, Response, status
+from fastapi import FastAPI, HTTPException, Request, status
 from fastapi.responses import JSONResponse, FileResponse
 from fastapi.middleware.cors import CORSMiddleware
 from starlette.middleware.base import BaseHTTPMiddleware
 from diskcache import Cache
 
+# relative imports of your modules
 from .generator import generate_manim_code
 from .executor import execute_manim_code
 
-# load .env
+# ─────────────────────────────────────────────────────────────────────────────
+# Load environment
 load_dotenv()
 
-# -------------------------------------------------------------------
-# CONFIG
-# -------------------------------------------------------------------
-PORT = int(os.getenv("PORT", 5000))
-CACHE_DIR = "cache"
-CACHE_TTL = 60        # seconds
-MEDIA_DIR = Path("media/videos")
+# ─────────────────────────────────────────────────────────────────────────────
+# Configuration
+PORT       = int(os.getenv("PORT", 5000))
+CACHE_DIR  = "cache"
+CACHE_TTL  = 60        # seconds
+MEDIA_DIR  = Path("media/videos")
 MEDIA_DIR.mkdir(parents=True, exist_ok=True)
 
-# -------------------------------------------------------------------
-# INIT
-# -------------------------------------------------------------------
+# ─────────────────────────────────────────────────────────────────────────────
+# Logging
+logger = logging.getLogger("uvicorn")
+logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
+
+# ─────────────────────────────────────────────────────────────────────────────
+# App init
 app = FastAPI()
-# CORS
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],           # adjust to your domain(s)
-    allow_methods=["POST", "GET"],
+    allow_origins=["*"],      # adjust for production
+    allow_methods=["GET", "POST"],
     allow_headers=["*"],
 )
-# Disk-backed cache
+
+# Disk‐backed cache
 cache = Cache(CACHE_DIR)
 
-# -------------------------------------------------------------------
-# RESOURCE CHECK MIDDLEWARE
-# -------------------------------------------------------------------
+# ─────────────────────────────────────────────────────────────────────────────
+# Middleware: resource guard + timeout
 class ResourceGuardMiddleware(BaseHTTPMiddleware):
     async def dispatch(self, request: Request, call_next):
-        # simple CPU/memory guard
+        # if CPU or RAM >90%, reject
         if psutil.cpu_percent() > 90 or psutil.virtual_memory().percent > 90:
             return JSONResponse(
                 {"error": "Server overloaded; try again later."},
                 status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             )
-        # start timer
         request.state.start_time = time.time()
-        resp = await call_next(request)
-        # enforce max duration
+        response = await call_next(request)
         elapsed = time.time() - request.state.start_time
         if elapsed > 300:
             return JSONResponse(
                 {"error": "Request timeout"},
                 status_code=status.HTTP_408_REQUEST_TIMEOUT,
             )
-        return resp
+        return response
 
 app.add_middleware(ResourceGuardMiddleware)
 
-# -------------------------------------------------------------------
-# ROUTES
-# -------------------------------------------------------------------
+# ─────────────────────────────────────────────────────────────────────────────
+# Startup event
+@app.on_event("startup")
+async def on_startup():
+    logger.info("🚀 FastAPI application has started!")
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Routes
+
+@app.get("/")
+async def root():
+    return {"status": "ok"}
+
+
+@app.get("/health")
+async def health_check():
+    return {"status": "ok"}
+
+
 @app.post("/generate")
 async def generate_animation(request: Request):
     body = await request.json()
     prompt = (body.get("prompt") or "").strip()
     if not prompt:
-        raise HTTPException(400, "Prompt is required")
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "Prompt is required")
 
-    # cache key based on prompt only (we auto-expire)
-    key = f"video::{hash(prompt)}"
-    if key in cache:
-        return cache.get(key)
+    logger.info("Received /generate with prompt: %s", prompt)
 
-    # 1️⃣ generate code
+    cache_key = f"video::{hash(prompt)}"
+    cached = cache.get(cache_key)
+    if cached:
+        logger.info("Cache hit for prompt")
+        return cached
+
+    # 1) generate the Manim code
     code = generate_manim_code(prompt)
 
-    # 2️⃣ find scene class
+    # 2) extract Scene class name
     m = re.search(r"class\s+(\w+)\(Scene\)", code)
     if not m:
-        raise HTTPException(500, "No Scene subclass found in generated code")
+        raise HTTPException(status.HTTP_500_INTERNAL_SERVER_ERROR,
+                            "No Scene subclass found in generated code")
     scene_name = m.group(1)
 
-    # 3️⃣ render video
+    # 3) render video
     video_path = execute_manim_code(code, scene_name)
     rel = Path(video_path).resolve().relative_to(MEDIA_DIR.resolve())
     url = f"/media/videos/{rel.as_posix()}"
 
     payload = {"videoUrl": url, "code": code}
-    # store in cache
-    cache.set(key, payload, expire=CACHE_TTL)
+    cache.set(cache_key, payload, expire=CACHE_TTL)
+    logger.info("Generated video %s", url)
     return payload
+
 
 @app.get("/media/videos/{filename:path}")
 async def serve_video(filename: str):
     file_path = MEDIA_DIR / filename
     if not file_path.exists():
-        raise HTTPException(404, "Video not found")
-    # no-cache headers
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Video not found")
     return FileResponse(
         str(file_path),
         headers={
@@ -114,18 +139,15 @@ async def serve_video(filename: str):
         },
     )
 
-@app.get("/health")
-async def health_check():
-    return {"status": "ok"}
 
-# -------------------------------------------------------------------
-# GLOBAL EXCEPTION HANDLER
-# -------------------------------------------------------------------
+# ─────────────────────────────────────────────────────────────────────────────
+# Global exception handler
 @app.exception_handler(Exception)
 async def global_exception_handler(request: Request, exc: Exception):
-    code = status.HTTP_500_INTERNAL_SERVER_ERROR
+    code   = status.HTTP_500_INTERNAL_SERVER_ERROR
     detail = str(exc)
     if isinstance(exc, HTTPException):
-        code = exc.status_code
+        code   = exc.status_code
         detail = exc.detail
+    logger.error("Unhandled error: %s", detail, exc_info=exc)
     return JSONResponse({"error": detail}, status_code=code)
