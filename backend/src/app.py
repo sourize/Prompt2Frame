@@ -11,8 +11,8 @@ from fastapi.middleware.cors import CORSMiddleware
 from starlette.middleware.base import BaseHTTPMiddleware
 from diskcache import Cache
 
-from generator import generate_manim_code
-from executor import execute_manim_code
+from .generator import generate_manim_code
+from .executor import execute_manim_code
 
 # load .env
 load_dotenv()
