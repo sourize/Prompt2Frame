@@ -6,3 +6,4 @@ psutil==5.9.8
 groq==0.4.2
 httpx==0.24.1
 manim==0.17.3
+gunicorn==21.2.0
