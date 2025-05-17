@@ -1,15 +1,10 @@
-### executor.py
-
 import os
 import uuid
 import subprocess
 from pathlib import Path
 
 def execute_manim_code(code: str, scene_name: str, output_dir: str = "media/videos") -> str:
-    """
-    Writes `code` to a unique temp folder under `output_dir`, invokes Manim CLI to render
-    the specified `scene_name`, and returns the resulting video path.
-    """
+
     try:
         # Convert to absolute paths
         base = Path(output_dir).resolve()
@@ -32,17 +27,17 @@ def execute_manim_code(code: str, scene_name: str, output_dir: str = "media/vide
         
         # Render via Manim
         cmd = [
-            "manim", "render",  # Explicitly use render command
+            "manim", "render",
             str(scene_py),
             scene_name,
-            "-ql",  # Use -ql for low quality (equivalent to --quality l)
+            "-ql",
             "--disable_caching",
             "--media_dir", str(base),
             "--output_file", str(output_file),
-            "--preview", "false"  # Correct way to disable preview
+            "--preview", "false"
         ]
         print(f"Running command: {' '.join(cmd)}")
-        result = subprocess.run(cmd, capture_output=True, text=True, timeout=300)  # 5 minute timeout
+        result = subprocess.run(cmd, capture_output=True, text=True, timeout=300)
         if result.returncode:
             print(f"Manim stderr: {result.stderr}")
             raise RuntimeError(f"Manim failed: {result.stderr}")
@@ -50,7 +45,6 @@ def execute_manim_code(code: str, scene_name: str, output_dir: str = "media/vide
         # Check for video in the expected location
         video_file = run_dir / f"{scene_name}.mp4"
         if not video_file.exists():
-            # Try alternative location
             video_file = base / "videos" / run_id / f"{scene_name}.mp4"
             if not video_file.exists():
                 print(f"Manim stdout: {result.stdout}")

@@ -1,5 +1,3 @@
-# src/app.py
-
 import os
 import re
 import time
@@ -14,7 +12,6 @@ from fastapi.middleware.cors import CORSMiddleware
 from starlette.middleware.base import BaseHTTPMiddleware
 from diskcache import Cache
 
-# relative imports of your modules
 from .generator import generate_manim_code
 from .executor import execute_manim_code
 
@@ -26,7 +23,7 @@ load_dotenv()
 # Configuration
 PORT       = int(os.getenv("PORT", 5000))
 CACHE_DIR  = "cache"
-CACHE_TTL  = 60        # seconds
+CACHE_TTL  = 60 #seconds
 MEDIA_DIR  = Path("media/videos")
 MEDIA_DIR.mkdir(parents=True, exist_ok=True)
 
@@ -40,7 +37,7 @@ logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(mess
 app = FastAPI()
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],      # adjust for production
+    allow_origins=["*"],
     allow_methods=["GET", "POST"],
     allow_headers=["*"],
 )
