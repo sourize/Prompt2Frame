@@ -1,4 +1,3 @@
-
 import React, { useState, useRef } from 'react';
 import { motion } from 'framer-motion';
 import axios from 'axios';
@@ -15,7 +14,6 @@ import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 
 const examples = [
   "Draw a red circle and transform it into a square",
-  "Draw a blue circle and transform it into a triangle",
   "Create a bouncing ball that changes colors",
   "Animate a growing neural network visualization"
 ];
@@ -118,20 +116,6 @@ const Index = () => {
     }
   };
 
-  // Background animation variants for the blobs
-  const blobVariants = {
-    initial: { scale: 0.8, opacity: 0.7 },
-    animate: { 
-      scale: [0.8, 1.1, 0.8], 
-      opacity: [0.7, 0.9, 0.7],
-      transition: { 
-        repeat: Infinity, 
-        duration: 12,
-        ease: "easeInOut" 
-      }
-    }
-  };
-
   return (
     <div className="relative min-h-screen flex flex-col items-center px-4 py-10 md:py-12 overflow-hidden">
       {/* Patterned background */}
@@ -139,26 +123,10 @@ const Index = () => {
         className="absolute inset-0 bg-grid-small-black/[0.2] -z-10" 
         style={{ backgroundSize: '32px 32px' }}
       />
-      <div className="absolute inset-0 bg-background/80 backdrop-blur-[2px] -z-10" />
+      <div className="absolute inset-0 bg-gradient-to-b from-background/95 to-background/80 -z-10" />
       
-      {/* Animated background blobs - visible only on larger screens */}
-      <div className="absolute inset-0 overflow-hidden pointer-events-none hidden md:block">
-        <motion.div 
-          className="absolute top-[10%] left-[5%] w-[40vw] h-[40vw] rounded-full bg-primary/5 blur-3xl"
-          variants={blobVariants}
-          initial="initial"
-          animate="animate"
-          custom={0}
-        />
-        <motion.div 
-          className="absolute bottom-[20%] right-[10%] w-[35vw] h-[35vw] rounded-full bg-primary/10 blur-3xl"
-          variants={blobVariants}
-          initial="initial"
-          animate="animate"
-          transition={{ delay: 2 }}
-          custom={1}
-        />
-      </div>
+      {/* Subtle gradient overlay */}
+      <div className="absolute inset-0 bg-gradient-to-br from-primary/5 via-transparent to-primary/5 -z-10" />
 
       {/* Header with improved typography */}
       <motion.div
@@ -254,36 +222,28 @@ const Index = () => {
                     <Textarea
                       value={prompt}
                       onChange={(e) => setPrompt(e.target.value)}
-                      placeholder="Describe your animation idea... (e.g. Draw a red circle and transform it into a square)"
+                      placeholder="Describe your animation idea... (Make the prompt concise and simple since the backend has very limited capacity ~ I will surely improve it)"
                       className="min-h-[120px] resize-none focus:ring-primary"
                     />
                     
-                    {/* Warning about backend limitations */}
-                    <div className="p-3 rounded-lg bg-amber-500/10 border border-amber-500/30 flex items-start gap-2">
-                      <AlertCircle size={18} className="text-amber-500 mt-0.5 flex-shrink-0" />
-                      <p className="text-xs text-muted-foreground">
-                        <strong className="font-medium text-amber-500">Important:</strong> The backend has limited capacity. Keep prompts concise and avoid complex requests. The system works best with simple geometric animations and basic transformations.
-                      </p>
-                    </div>
-                    {/* Warning about backend limitations */}
-                    <div className="p-3 rounded-lg bg-amber-500/10 border border-amber-500/30 flex items-start gap-2">
-                      <AlertCircle size={18} className="text-amber-500 mt-0.5 flex-shrink-0" />
-                      <p className="text-xs text-muted-foreground">
-                        <strong className="font-medium text-amber-500">Important:</strong> If you get an error, refresh the page and try again.
-                      </p>
-                    </div>
                     <div>
-                      <p className="text-sm text-muted-foreground mb-2 text-center">Example prompts:</p>
-                      <div className="flex flex-wrap justify-center gap-2">
+                      <p className="text-sm text-muted-foreground mb-3 text-center font-medium">Try these examples:</p>
+                      <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
                         {examples.map((example, idx) => (
-                          <motion.div key={idx} whileHover={{ scale: 1.03 }} whileTap={{ scale: 0.97 }}>
-                            <Badge 
-                              variant="secondary" 
-                              className="cursor-pointer" 
+                          <motion.div 
+                            key={idx} 
+                            whileHover={{ scale: 1.02, y: -2 }} 
+                            whileTap={{ scale: 0.98 }}
+                            className="cursor-pointer"
+                          >
+                            <Card 
+                              className="h-full hover:border-primary/50 transition-colors"
                               onClick={() => setPrompt(example)}
                             >
-                              {example}
-                            </Badge>
+                              <CardContent className="p-4">
+                                <p className="text-sm">{example}</p>
+                              </CardContent>
+                            </Card>
                           </motion.div>
                         ))}
                       </div>
@@ -292,7 +252,7 @@ const Index = () => {
                     <motion.div whileHover={{ scale: 1.02 }} whileTap={{ scale: 0.98 }}>
                       <Button 
                         type="submit" 
-                        className="w-full gap-2" 
+                        className="w-full gap-2 bg-gradient-to-r from-primary to-primary/80 hover:from-primary/90 hover:to-primary/70" 
                         disabled={loading}
                       >
                         {loading ? (
@@ -330,10 +290,33 @@ const Index = () => {
                 </CardHeader>
                 <CardContent>
                   {error && (
-                    <div className="p-4 mb-4 rounded-lg bg-destructive/10 border border-destructive/30 text-destructive">
-                      <div className="flex items-start gap-2">
-                        <Info size={18} className="mt-0.5 flex-shrink-0" />
-                        <p>{error}</p>
+                    <div className="p-4 mb-4 rounded-lg bg-destructive/10 border border-destructive/30">
+                      <div className="flex items-start gap-3">
+                        <AlertCircle size={20} className="text-destructive mt-0.5 flex-shrink-0" />
+                        <div className="space-y-2">
+                          <p className="text-destructive font-medium">Generation Failed</p>
+                          <p className="text-sm text-muted-foreground">{error}</p>
+                          <div className="space-y-2">
+                            <div className="p-3 rounded-lg bg-amber-500/10 border border-amber-500/30">
+                              <p className="text-xs text-muted-foreground">
+                                <strong className="font-medium text-amber-500">Tip:</strong> The backend has limited capacity. Keep prompts concise and avoid complex requests. The system works best with simple geometric animations and basic transformations.
+                              </p>
+                            </div>
+                            <div className="p-3 rounded-lg bg-amber-500/10 border border-amber-500/30">
+                              <p className="text-xs text-muted-foreground">
+                                <strong className="font-medium text-amber-500">Note:</strong> If you encounter an error, please refresh the page and try again.
+                              </p>
+                            </div>
+                          </div>
+                          <Button 
+                            variant="outline" 
+                            size="sm" 
+                            className="mt-2"
+                            onClick={() => window.location.reload()}
+                          >
+                            Refresh Page
+                          </Button>
+                        </div>
                       </div>
                     </div>
                   )}
