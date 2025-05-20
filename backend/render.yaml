@@ -5,13 +5,14 @@ services:
     buildCommand: |
       pip install --upgrade pip
       pip install -r requirements.txt
-    startCommand: cd src && PYTHONPATH=$PYTHONPATH:. gunicorn app:app --timeout 300 --workers 1 --threads 2
+    startCommand: |
+      cd src
+      PYTHONPATH=$PYTHONPATH:. \
+      gunicorn \
+        --config ../src/gunicorn_config.py \
+        app:app
     envVars:
-      - key: PYTHON_VERSION
-        value: 3.10.0
       - key: GROQ_API_KEY
         sync: false
-      - key: FLASK_ENV
-        value: production
-      - key: FLASK_APP
-        value: src/app.py
+      - key: PORT
+        value: "5000"
