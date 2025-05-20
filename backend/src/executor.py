@@ -48,11 +48,16 @@ def execute_manim_code(
         )
         if proc.returncode != 0:
             stderr = proc.stderr or ""
-            # Detect known unsupported camera.frame usage
+            # Handle known failure modes gracefully:
             if "Camera' object has no attribute 'frame" in stderr:
-                raise RuntimeError(
-                    "Scene uses unsupported camera operations (camera.frame)."
-                )
+                raise RuntimeError("Unsupported camera operation: camera.frame")
+            if "Unexpected argument False passed to Scene.play" in stderr:
+                raise RuntimeError("Invalid play() arguments in scene code")
+            if "ValueError(\"Called Scene.play with no animations" in stderr:
+                raise RuntimeError("Scene.play() was called with no animations")
+            if "'float' object is not subscriptable" in stderr:
+                raise RuntimeError("Invalid geometry arguments (floats used incorrectly)")
+            # Fallback: unrecognized Manim error
             raise RuntimeError(f"Manim failed:\n{stderr.strip()}")
     except subprocess.TimeoutExpired:
         raise RuntimeError("Manim rendering timed out")
