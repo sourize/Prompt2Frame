@@ -47,7 +47,13 @@ def execute_manim_code(
             cmd, capture_output=True, text=True, timeout=timeout
         )
         if proc.returncode != 0:
-            raise RuntimeError(f"Manim failed:\n{proc.stderr.strip()}")
+            stderr = proc.stderr or ""
+            # Detect known unsupported camera.frame usage
+            if "Camera' object has no attribute 'frame" in stderr:
+                raise RuntimeError(
+                    "Scene uses unsupported camera operations (camera.frame)."
+                )
+            raise RuntimeError(f"Manim failed:\n{stderr.strip()}")
     except subprocess.TimeoutExpired:
         raise RuntimeError("Manim rendering timed out")
     except Exception as e:
