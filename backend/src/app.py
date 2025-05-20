@@ -1,150 +1,96 @@
-import os
-import re
-import time
-import uuid
-import logging
-import psutil
-
-from pathlib import Path
+import time, uuid, psutil, logging
 from fastapi import FastAPI, HTTPException, Request, status
 from fastapi.responses import JSONResponse, FileResponse
 from fastapi.middleware.cors import CORSMiddleware
 from starlette.middleware.base import BaseHTTPMiddleware
 from diskcache import Cache
-from dotenv import load_dotenv
+from pathlib import Path
 
 from .generator import generate_manim_code
-from .outline import generate_outline
-from .executor import execute_manim_code, concat_videos, MEDIA_ROOT
+from .executor  import execute_manim_code, concat_videos, MEDIA_ROOT
 
-# ─────────────────────────────────────────────────────────────────────────────
-load_dotenv()
-PORT      = int(os.getenv("PORT", 5000))
-CACHE_TTL = 60  # seconds
-MEDIA_ROOT.mkdir(parents=True, exist_ok=True)
-
-# ─────────────────────────────────────────────────────────────────────────────
-logging.basicConfig(
-    level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s"
-)
+# ─── Logging & Cache ─────────────────────────────────────────────────────────
+logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
 logger = logging.getLogger("uvicorn")
+cache = Cache("cache")
 
+# ─── FastAPI setup ───────────────────────────────────────────────────────────
 app = FastAPI()
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
-    allow_methods=["GET", "POST"],
+    allow_methods=["GET","POST","OPTIONS"],
     allow_headers=["*"],
 )
-cache = Cache("cache_dir")
 
 class ResourceGuard(BaseHTTPMiddleware):
     async def dispatch(self, request: Request, call_next):
-        # Bypass the guard for health checks
         if request.url.path == "/health":
             return await call_next(request)
-
-        # If CPU or RAM >90%, reject
         if psutil.cpu_percent() > 90 or psutil.virtual_memory().percent > 90:
-            return JSONResponse(
-                {"error": "Server overloaded; try again later."},
-                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            )
-
+            return JSONResponse({"error":"Server overloaded"}, status.HTTP_503_SERVICE_UNAVAILABLE)
         start = time.time()
-        response = await call_next(request)
-        elapsed = time.time() - start
-
-        # Enforce your overall request timeout
-        if elapsed > 300:
-            return JSONResponse(
-                {"error": "Request timeout"},
-                status_code=status.HTTP_408_REQUEST_TIMEOUT,
-            )
-        return response
+        resp = await call_next(request)
+        if time.time() - start > 300:
+            return JSONResponse({"error":"Request timed out"}, status.HTTP_408_REQUEST_TIMEOUT)
+        return resp
 
 app.add_middleware(ResourceGuard)
 
-@app.on_event("startup")
-async def on_startup():
-    logger.info("🚀 Application startup complete")
-
 @app.get("/health")
-async def health():
-    return {"status": "ok"}
+async def health(): return {"status":"ok"}
 
 @app.post("/generate")
 async def generate(request: Request):
-    data = await request.json()
-    prompt = (data.get("prompt") or "").strip()
+    body = await request.json()
+    prompt = body.get("prompt","").strip()
     if not prompt:
         raise HTTPException(400, "Prompt is required")
 
     cache_key = f"gen::{hash(prompt)}"
-    if cached := cache.get(cache_key):
+    if (cached := cache.get(cache_key)):
         return cached
 
-    logger.info("Received prompt: %s", prompt)
-
-    # 1) Storyboard
     try:
-        outline = generate_outline(prompt)
+        scenes = generate_manim_code(prompt)
     except Exception as e:
-        raise HTTPException(500, f"Outline generation failed: {e}")
+        raise HTTPException(500, f"LLM generation error: {e}")
 
-    # 2) Generate & render each scene
-    scene_videos = []
-    errors = []
-    for idx, scene_desc in enumerate(outline, start=1):
+    videos, codes, errors = [], [], []
+    for idx, sc in enumerate(scenes, start=1):
+        name, code = sc["name"], sc["code"]
+        codes.append({"scene":idx, "name":name, "code":code})
         try:
-            code = generate_manim_code(scene_desc)
-            m = re.search(r"class\s+(\w+)\(Scene\)", code)
-            if not m:
-                raise ValueError("No Scene subclass found")
-            scene_name = m.group(1)
-            try:
-                vid = execute_manim_code(code, scene_name)
-                scene_videos.append(vid)
-            except Exception as e:
-                logger.error("Scene %d failed: %s", idx, e)
-                errors.append({"scene": idx, "error": str(e)})
+            vp = execute_manim_code(code, name)
+            videos.append(vp)
         except Exception as e:
-            logger.error("Code generation failed for scene %d: %s", idx, e)
-            errors.append({"scene": idx, "error": f"Code generation failed: {e}"})
+            logger.error("Scene %d failed: %s", idx, e)
+            errors.append({"scene":idx, "error": str(e)})
 
-    if not scene_videos:
-        raise HTTPException(500, f"All scenes failed: {errors}")
+    if not videos:
+        raise HTTPException(500, "All scenes failed—see errors array")
 
-    # 3) Stitch
-    try:
-        final_vid = concat_videos(scene_videos, final_name=str(uuid.uuid4()))
-    except Exception as e:
-        raise HTTPException(500, f"Video stitching failed: {e}")
-
-    rel = final_vid.resolve().relative_to(MEDIA_ROOT.resolve())
-    url = f"/media/videos/{rel.as_posix()}"
-
-    payload = {"videoUrl": url, "outline": outline, "errors": errors}
-    cache.set(cache_key, payload, expire=CACHE_TTL)
+    # If multiple, concat; otherwise pick lone
+    final_path = concat_videos(videos) if len(videos)>1 else videos[0]
+    rel = final_path.resolve().relative_to(MEDIA_ROOT.resolve())
+    payload = {
+        "videoUrl": f"/media/videos/{rel.as_posix()}",
+        "codes": codes,
+        "errors": errors,
+    }
+    cache.set(cache_key, payload, expire=60)
     return payload
 
 @app.get("/media/videos/{path:path}")
 async def serve(path: str):
-    file_path = MEDIA_ROOT / path
-    if not file_path.exists():
-        raise HTTPException(404, "Not found")
+    file = MEDIA_ROOT / path
+    if not file.exists():
+        raise HTTPException(404, "Video not found")
     return FileResponse(
-        str(file_path),
+        str(file),
         headers={
-            "Cache-Control": "no-store",
-            "Pragma": "no-cache",
-            "Expires": "0",
-        },
+            "Cache-Control":"no-store, max-age=0",
+            "Pragma":"no-cache",
+            "Expires":"0"
+        }
     )
-
-@app.exception_handler(Exception)
-async def catch_all(request, exc):
-    code = getattr(exc, "status_code", status.HTTP_500_INTERNAL_SERVER_ERROR)
-    msg = str(exc)
-    logger.error("Unhandled error: %s", msg, exc_info=exc)
-    return JSONResponse({"error": msg}, status_code=code)
