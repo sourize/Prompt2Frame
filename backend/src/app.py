@@ -1,176 +1,92 @@
 import os
 import re
-import time
 import uuid
-import logging
-import psutil
 import subprocess
-
 from pathlib import Path
-from dotenv import load_dotenv
-from fastapi import FastAPI, HTTPException, Request, status
-from fastapi.responses import JSONResponse, FileResponse
+from fastapi import FastAPI, HTTPException, Request
+from fastapi.responses import FileResponse, JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
-from starlette.middleware.base import BaseHTTPMiddleware
 from diskcache import Cache
+import psutil
 
 from .generator import generate_manim_code
-from .executor import execute_manim_code
 from .outline import generate_outline
+from .executor import execute_manim_code
 
-# ─────────────────────────────────────────────────────────────────────────────
-# Load environment
-load_dotenv()
-
-# ─────────────────────────────────────────────────────────────────────────────
 # Configuration
-PORT       = int(os.getenv("PORT", 5000))
-CACHE_DIR  = "cache"
-CACHE_TTL  = 60 #seconds
-MEDIA_DIR  = Path("media/videos")
-MEDIA_DIR.mkdir(parents=True, exist_ok=True)
+env = os.getenv
+PORT = int(env("PORT", 5000))
+MEDIA_ROOT = Path(env("MEDIA_DIR", "media/videos")).resolve()
+MEDIA_ROOT.mkdir(parents=True, exist_ok=True)
+CACHE_TTL = int(env("CACHE_TTL", 60))
 
-# ─────────────────────────────────────────────────────────────────────────────
-# Logging
-logger = logging.getLogger("uvicorn")
-logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
-
-# ─────────────────────────────────────────────────────────────────────────────
-# App init
+# FastAPI init
 app = FastAPI()
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
-    allow_methods=["GET", "POST"],
-    allow_headers=["*"],
+    allow_origins=["*"], allow_methods=["GET","POST"], allow_headers=["*"],
 )
+cache = Cache(env("CACHE_DIR", "cache"))
 
-# Disk‐backed cache
-cache = Cache(CACHE_DIR)
-
-# ─────────────────────────────────────────────────────────────────────────────
-# Middleware: resource guard + timeout
-class ResourceGuardMiddleware(BaseHTTPMiddleware):
-    async def dispatch(self, request: Request, call_next):
-        # if CPU or RAM >90%, reject
-        if psutil.cpu_percent() > 90 or psutil.virtual_memory().percent > 90:
-            return JSONResponse(
-                {"error": "Server overloaded; try again later."},
-                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            )
-        request.state.start_time = time.time()
-        response = await call_next(request)
-        elapsed = time.time() - request.state.start_time
-        if elapsed > 300:
-            return JSONResponse(
-                {"error": "Request timeout"},
-                status_code=status.HTTP_408_REQUEST_TIMEOUT,
-            )
-        return response
-
-app.add_middleware(ResourceGuardMiddleware)
-
-# ─────────────────────────────────────────────────────────────────────────────
-# Startup event
-@app.on_event("startup")
-async def on_startup():
-    logger.info("🚀 FastAPI application has started!")
-
-# ─────────────────────────────────────────────────────────────────────────────
-# Routes
-
-@app.get("/")
-async def root():
-    return {"status": "ok"}
-
+# Resource guard
+@app.middleware("http")
+async def guard(request: Request, call_next):
+    if psutil.cpu_percent() > 90 or psutil.virtual_memory().percent > 90:
+        return JSONResponse({"error": "Server overloaded"}, status_code=503)
+    response = await call_next(request)
+    return response
 
 @app.get("/health")
-async def health_check():
+def health():
     return {"status": "ok"}
 
-
 @app.post("/generate")
-async def generate_animation(request: Request):
-    body = await request.json()
-    prompt = (body.get("prompt") or "").strip()
+async def generate(request: Request):
+    data = await request.json()
+    prompt = data.get("prompt", "").strip()
     if not prompt:
-        raise HTTPException(status.HTTP_400_BAD_REQUEST, "Prompt is required")
+        raise HTTPException(400, "prompt is required")
 
-    logger.info("Received /generate with prompt: %s", prompt)
-
-    cache_key = f"video::{hash(prompt)}"
-    cached = cache.get(cache_key)
-    if cached:
-        logger.info("Cache hit for prompt")
+    key = f"video::{hash(prompt)}"
+    if cached := cache.get(key):
         return cached
 
-    # 1) generate a storyboard outline
+    # 1. Storyboard outline
     outline = generate_outline(prompt)
 
-    # 2) for each outline item, generate Manim code
-    scene_video_urls = []
-    for idx, scene_desc in enumerate(outline, start=1):
-        scene_code = generate_manim_code(scene_desc)
-        # extract class name
-        m = re.search(r"class\s+(\w+)\(Scene\)", scene_code)
+    clips = []
+    for idx, scene_desc in enumerate(outline, 1):
+        code = generate_manim_code(scene_desc)
+        m = re.search(r"class\s+(\w+)\(Scene\)", code)
         if not m:
-            raise HTTPException(500, f"No Scene subclass in scene #{idx}")
+            raise HTTPException(500, f"No Scene subclass in segment {idx}")
         scene_name = m.group(1)
+        video_path = execute_manim_code(code, scene_name, MEDIA_ROOT)
+        rel = video_path.relative_to(MEDIA_ROOT)
+        clips.append(f"/media/videos/{rel.as_posix()}")
 
-        # 3) render each scene
-        video_path = execute_manim_code(scene_code, scene_name)
-        rel = Path(video_path).resolve().relative_to(MEDIA_DIR.resolve())
-        scene_video_urls.append(f"/media/videos/{rel.as_posix()}")
-
-    # 4) stitch clips into one final video (ffmpeg)
-    final_id = uuid.uuid4().hex
-    concat_list = MEDIA_DIR / final_id / "list.txt"
-    (MEDIA_DIR / final_id).mkdir(parents=True, exist_ok=True)
-    with open(concat_list, "w") as f:
-        for url in scene_video_urls:
-            # ffmpeg concat protocol wants file paths
-            path = MEDIA_DIR / url.split("/media/videos/")[1]
+    # 2. Concatenate via ffmpeg
+    run_id = uuid.uuid4().hex
+    bundle = MEDIA_ROOT / run_id
+    bundle.mkdir()
+    list_file = bundle / "parts.txt"
+    with list_file.open("w") as f:
+        for clip in clips:
+            path = MEDIA_ROOT / Path(clip).name
             f.write(f"file '{path}'\n")
-
-    final_output = MEDIA_DIR / final_id / "final.mp4"
+    final_mp4 = bundle / "final.mp4"
     subprocess.run([
-        "ffmpeg", "-y", "-f", "concat", "-safe", "0",
-        "-i", str(concat_list),
-        "-c", "copy", str(final_output)
+        "ffmpeg","-y","-f","concat","-safe","0",
+        "-i", str(list_file), "-c","copy", str(final_mp4)
     ], check=True)
 
-    payload = {
-        "videoUrl": f"/media/videos/{final_id}/final.mp4",
-        "outline": outline,
-        "sceneClips": scene_video_urls
-    }
-    cache.set(cache_key, payload, expire=CACHE_TTL)
-    return payload
+    result = {"videoUrl": f"/media/videos/{run_id}/final.mp4", "outline": outline}
+    cache.set(key, result, expire=CACHE_TTL)
+    return result
 
-
-@app.get("/media/videos/{filename:path}")
-async def serve_video(filename: str):
-    file_path = MEDIA_DIR / filename
-    if not file_path.exists():
-        raise HTTPException(status.HTTP_404_NOT_FOUND, "Video not found")
-    return FileResponse(
-        str(file_path),
-        headers={
-            "Cache-Control": "no-store, no-cache, must-revalidate, max-age=0",
-            "Pragma": "no-cache",
-            "Expires": "0",
-        },
-    )
-
-
-# ─────────────────────────────────────────────────────────────────────────────
-# Global exception handler
-@app.exception_handler(Exception)
-async def global_exception_handler(request: Request, exc: Exception):
-    code   = status.HTTP_500_INTERNAL_SERVER_ERROR
-    detail = str(exc)
-    if isinstance(exc, HTTPException):
-        code   = exc.status_code
-        detail = exc.detail
-    logger.error("Unhandled error: %s", detail, exc_info=exc)
-    return JSONResponse({"error": detail}, status_code=code)
+@app.get("/media/videos/{path:path}")
+def serve(path: str):
+    file = MEDIA_ROOT / path
+    if not file.exists():
+        raise HTTPException(404, "not found")
+    return FileResponse(str(file), media_type="video/mp4")
