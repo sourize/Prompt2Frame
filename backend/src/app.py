@@ -1,8 +1,10 @@
 import os
 import re
 import time
+import uuid
 import logging
 import psutil
+import subprocess
 
 from pathlib import Path
 from dotenv import load_dotenv
@@ -14,6 +16,7 @@ from diskcache import Cache
 
 from .generator import generate_manim_code
 from .executor import execute_manim_code
+from .outline import generate_outline
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Load environment
@@ -101,24 +104,47 @@ async def generate_animation(request: Request):
         logger.info("Cache hit for prompt")
         return cached
 
-    # 1) generate the Manim code
-    code = generate_manim_code(prompt)
+    # 1) generate a storyboard outline
+    outline = generate_outline(prompt)
 
-    # 2) extract Scene class name
-    m = re.search(r"class\s+(\w+)\(Scene\)", code)
-    if not m:
-        raise HTTPException(status.HTTP_500_INTERNAL_SERVER_ERROR,
-                            "No Scene subclass found in generated code")
-    scene_name = m.group(1)
+    # 2) for each outline item, generate Manim code
+    scene_video_urls = []
+    for idx, scene_desc in enumerate(outline, start=1):
+        scene_code = generate_manim_code(scene_desc)
+        # extract class name
+        m = re.search(r"class\s+(\w+)\(Scene\)", scene_code)
+        if not m:
+            raise HTTPException(500, f"No Scene subclass in scene #{idx}")
+        scene_name = m.group(1)
 
-    # 3) render video
-    video_path = execute_manim_code(code, scene_name)
-    rel = Path(video_path).resolve().relative_to(MEDIA_DIR.resolve())
-    url = f"/media/videos/{rel.as_posix()}"
+        # 3) render each scene
+        video_path = execute_manim_code(scene_code, scene_name)
+        rel = Path(video_path).resolve().relative_to(MEDIA_DIR.resolve())
+        scene_video_urls.append(f"/media/videos/{rel.as_posix()}")
 
-    payload = {"videoUrl": url, "code": code}
+    # 4) stitch clips into one final video (ffmpeg)
+    final_id = uuid.uuid4().hex
+    concat_list = MEDIA_DIR / final_id / "list.txt"
+    (MEDIA_DIR / final_id).mkdir(parents=True, exist_ok=True)
+    with open(concat_list, "w") as f:
+        for url in scene_video_urls:
+            # ffmpeg concat protocol wants file paths
+            path = MEDIA_DIR / url.split("/media/videos/")[1]
+            f.write(f"file '{path}'\n")
+
+    final_output = MEDIA_DIR / final_id / "final.mp4"
+    subprocess.run([
+        "ffmpeg", "-y", "-f", "concat", "-safe", "0",
+        "-i", str(concat_list),
+        "-c", "copy", str(final_output)
+    ], check=True)
+
+    payload = {
+        "videoUrl": f"/media/videos/{final_id}/final.mp4",
+        "outline": outline,
+        "sceneClips": scene_video_urls
+    }
     cache.set(cache_key, payload, expire=CACHE_TTL)
-    logger.info("Generated video %s", url)
     return payload
 
 
