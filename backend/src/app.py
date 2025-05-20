@@ -93,11 +93,15 @@ async def generate(request: Request):
             if not m:
                 raise ValueError("No Scene subclass found")
             scene_name = m.group(1)
-            vid = execute_manim_code(code, scene_name)
-            scene_videos.append(vid)
+            try:
+                vid = execute_manim_code(code, scene_name)
+                scene_videos.append(vid)
+            except Exception as e:
+                logger.error("Scene %d failed: %s", idx, e)
+                errors.append({"scene": idx, "error": str(e)})
         except Exception as e:
-            logger.error("Scene %d failed: %s", idx, e)
-            errors.append({"scene": idx, "error": str(e)})
+            logger.error("Code generation failed for scene %d: %s", idx, e)
+            errors.append({"scene": idx, "error": f"Code generation failed: {e}"})
 
     if not scene_videos:
         raise HTTPException(500, f"All scenes failed: {errors}")
