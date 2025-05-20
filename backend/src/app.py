@@ -40,19 +40,28 @@ cache = Cache("cache_dir")
 
 class ResourceGuard(BaseHTTPMiddleware):
     async def dispatch(self, request: Request, call_next):
+        # Bypass the guard for health checks
+        if request.url.path == "/health":
+            return await call_next(request)
+
+        # If CPU or RAM >90%, reject
         if psutil.cpu_percent() > 90 or psutil.virtual_memory().percent > 90:
             return JSONResponse(
-                {"error": "Server overloaded"},
+                {"error": "Server overloaded; try again later."},
                 status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             )
+
         start = time.time()
-        resp = await call_next(request)
-        if time.time() - start > 300:
+        response = await call_next(request)
+        elapsed = time.time() - start
+
+        # Enforce your overall request timeout
+        if elapsed > 300:
             return JSONResponse(
                 {"error": "Request timeout"},
                 status_code=status.HTTP_408_REQUEST_TIMEOUT,
             )
-        return resp
+        return response
 
 app.add_middleware(ResourceGuard)
 
