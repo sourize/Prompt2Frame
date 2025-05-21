@@ -1,5 +1,4 @@
 import time
-import uuid
 import psutil
 import logging
 from fastapi import FastAPI, HTTPException, Request, status
@@ -42,40 +41,40 @@ async def health():
 
 @app.post("/generate")
 async def generate(request: Request):
-    body = await request.json()
-    prompt = body.get("prompt","").strip()
+    data = await request.json()
+    prompt = data.get("prompt", "").strip()
     if not prompt:
-        raise HTTPException(400, "Prompt is required")
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "Prompt is required")
 
-    # 1) Expand short user prompt into a detailed paragraph
-    detailed = expand_prompt(prompt)
+    # 1) Expand the short user prompt to one detailed paragraph
+    try:
+        detailed = expand_prompt(prompt)
+    except Exception as e:
+        raise HTTPException(500, f"Prompt expansion failed: {e}")
 
-    # 2) Ask the LLM to spit out one large Manim script
+    # 2) Generate a single Manim script
     try:
         code = generate_manim_code(detailed)
     except Exception as e:
-        raise HTTPException(500, f"Code‐gen error: {e}")
+        raise HTTPException(500, f"Code generation failed: {e}")
 
-    # 3) Render *all* Scene subclasses and concatenate
+    # 3) Render all scenes and concat
     try:
-        final_video = render_and_concat_all(code)
+        video_path = render_and_concat_all(code)
     except Exception as e:
         logger.error("Generation pipeline error: %s", e)
-        raise HTTPException(500, f"Generation pipeline error: {e}")
+        raise HTTPException(500, f"Rendering pipeline error: {e}")
 
-    rel = final_video.resolve().relative_to(MEDIA_ROOT.resolve())
+    rel = video_path.resolve().relative_to(MEDIA_ROOT.resolve())
     return {"videoUrl": f"/media/videos/{rel.as_posix()}"}
 
 @app.get("/media/videos/{path:path}")
 async def serve(path: str):
     file = MEDIA_ROOT / path
     if not file.exists():
-        raise HTTPException(404, "Video not found")
-    return FileResponse(
-        str(file),
-        headers={
-            "Cache-Control":"no-store, max-age=0",
-            "Pragma":"no-cache",
-            "Expires":"0"
-        }
-    )
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Video not found")
+    return FileResponse(str(file), headers={
+        "Cache-Control":"no-store, max-age=0",
+        "Pragma":"no-cache",
+        "Expires":"0"
+    })
