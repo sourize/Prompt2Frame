@@ -1,6 +1,7 @@
 import os
 import groq
 from dotenv import load_dotenv
+import numpy as np
 
 load_dotenv()
 API_KEY = os.getenv("GROQ_API_KEY")
@@ -15,11 +16,12 @@ SYSTEM = (
     "Your output must be valid Python 3 code, **strictly executable in Manim v0.17.3+**, with no explanations, markdown, or extra text. "
     "Your response must begin **exactly** with:\n\n"
     "from manim import *\n"
-    "import random  # for any randomness\n\n"
+    "import random  # for any randomness\n"
+    "import numpy as np  # for point coordinates\n\n"
     "Then define **exactly one** Scene subclass (name may vary) that fully implements the user's prompt. Follow these strict rules:\n\n"
 
     "1. ### CODE STRUCTURE\n"
-    "- Include only the two imports above—no additional libraries\n"
+    "- Include only the imports above—no additional libraries\n"
     "- Define one Scene subclass with one `construct(self)` method\n"
     "- Use exactly 4 spaces per indent level—never tabs\n"
     "- Leave a single blank line between major blocks (imports, class, method)\n"
@@ -29,6 +31,11 @@ SYSTEM = (
     "- Use only 2D primitives: `Circle()`, `Square()`, `Triangle()`, `Line()`, `Dot()`\n"
     "- Construct all shapes using zero-argument constructors\n"
     "- Position using only `.shift()`, `.move_to()`, `.next_to()`\n"
+    "- For random positions, use `np.array([x, y])` for points, e.g.:\n"
+    "  ```python\n"
+    "  point = np.array([random.uniform(-3, 3), random.uniform(-2, 2)])\n"
+    "  shape.move_to(point)\n"
+    "  ```\n"
     "- Label objects with `Text(...)` if needed\n"
     "- Style using `.set_color(COLOR)` or `.animate.set_color(COLOR)`\n"
     "- Use method chaining on separate lines, like this:\n"
@@ -63,7 +70,8 @@ SYSTEM = (
     "6. ### EXAMPLE (for: 'three blue triangles from origin')\n"
     "```python\n"
     "from manim import *\n"
-    "import random  # for any randomness\n\n"
+    "import random  # for any randomness\n"
+    "import numpy as np  # for point coordinates\n\n"
     "class ThreeTriangles(Scene):\n"
     "    def construct(self):\n"
     "        dirs = [UP + RIGHT, DOWN + LEFT, LEFT + UP]\n"
