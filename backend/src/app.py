@@ -48,21 +48,29 @@ async def generate(request: Request):
 
     # 1) Expand the short user prompt to one detailed paragraph
     try:
+        logger.info("Starting prompt expansion")
         detailed = expand_prompt(prompt)
+        logger.info("Prompt expansion successful")
     except Exception as e:
+        logger.error("Prompt expansion failed: %s", str(e))
         raise HTTPException(500, f"Prompt expansion failed: {e}")
 
     # 2) Generate a single Manim script
     try:
+        logger.info("Starting code generation")
         code = generate_manim_code(detailed)
+        logger.info("Code generation successful")
     except Exception as e:
+        logger.error("Code generation failed: %s", str(e))
         raise HTTPException(500, f"Code generation failed: {e}")
 
     # 3) Render all scenes and concat
     try:
+        logger.info("Starting rendering pipeline")
         video_path = render_and_concat_all(code)
+        logger.info("Rendering pipeline successful, video at: %s", str(video_path))
     except Exception as e:
-        logger.error("Generation pipeline error: %s", e)
+        logger.error("Generation pipeline error: %s", str(e))
         raise HTTPException(500, f"Rendering pipeline error: {e}")
 
     rel = video_path.resolve().relative_to(MEDIA_ROOT.resolve())
