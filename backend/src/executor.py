@@ -3,127 +3,150 @@ import subprocess
 import ast
 from pathlib import Path
 
+# ──────────────────────────────────────────────────────────────────────────────
+# Media root: generated videos will live under here
 MEDIA_ROOT = Path("media/videos")
+# ──────────────────────────────────────────────────────────────────────────────
 
 def _check_balanced_delimiters(code: str):
-    pairs = {
-        "(": ")",
-        "[": "]",
-        "{": "}",
-    }
-    for open_d, close_d in pairs.items():
-        count_open = code.count(open_d)
-        count_close = code.count(close_d)
-        if count_open != count_close:
+    pairs = {"(": ")", "[": "]", "{": "}"}
+    for o, c in pairs.items():
+        if code.count(o) != code.count(c):
             raise RuntimeError(
-                f"Unmatched delimiters in generated code: "
-                f"{count_open} ‘{open_d}’ vs {count_close} ‘{close_d}’"
+                f"Unmatched delimiters: {code.count(o)} ‘{o}’ vs {code.count(c)} ‘{c}’"
             )
 
 def execute_manim_code(
     code: str,
     scene_name: str,
-    quality: str = "l",     # one of 'l','m','h','p','k'
+    quality: str = "l",
     timeout: int = 300
 ) -> Path:
     """
-    1) Sanity-check delimiters and syntax.
-    2) Write to run_dir/scene.py.
-    3) Call manim to render.
-    4) Return the largest .mp4 under run_dir.
+    1) Quick delimiter check
+    2) AST-validate (syntax & indent)
+    3) Write to unique run_dir/scene.py
+    4) Call `manim render`
+    5) Return the largest .mp4 under that run_dir
     """
-    # ─── 0) Quick delimiter balance check ────────────────────────────────────────
+    # 1) Delimiters
     _check_balanced_delimiters(code)
 
-    # ─── 1) Syntax validation ───────────────────────────────────────────────────
+    # 2) Syntax & indentation
     try:
         ast.parse(code)
-    except IndentationError as e:
-        raise RuntimeError(f"Generated code has an indentation error: {e}")
-    except SyntaxError as e:
-        raise RuntimeError(f"Generated code has a syntax error: {e}")
+    except IndentationError as ie:
+        raise RuntimeError(f"Generated code has an indentation error: {ie}")
+    except SyntaxError as se:
+        raise RuntimeError(f"Generated code has a syntax error: {se}")
 
-    # ─── 2) Prepare directories & write file ─────────────────────────────────────
+    # 3) Prepare run directory
     run_id = uuid.uuid4().hex
     run_dir = MEDIA_ROOT / run_id
     run_dir.mkdir(parents=True, exist_ok=True)
     scene_py = run_dir / "scene.py"
     scene_py.write_text(code, encoding="utf-8")
 
-    # ─── 3) Invoke Manim ─────────────────────────────────────────────────────────
+    # 4) Invoke Manim
     media_dir = run_dir / "media"
-    media_dir.mkdir(exist_ok=True, parents=True)
+    media_dir.mkdir(parents=True, exist_ok=True)
     cmd = [
         "manim", "render",
         str(scene_py),
         scene_name,
-        f"-q{quality}",              # e.g. '-ql'
+        f"-q{quality}",
         "--disable_caching",
         "--media_dir", str(media_dir),
     ]
     try:
-        proc = subprocess.run(
-            cmd, capture_output=True, text=True, timeout=timeout
-        )
+        proc = subprocess.run(cmd, capture_output=True, text=True, timeout=timeout)
         if proc.returncode != 0:
-            stderr = proc.stderr or ""
-            # Known failure mappings
-            if "Camera' object has no attribute 'frame" in stderr:
+            err = proc.stderr or ""
+            # map known errors
+            if "Camera' object has no attribute 'frame" in err:
                 raise RuntimeError("Unsupported camera operation: camera.frame")
-            if "Unexpected argument False passed to Scene.play" in stderr:
+            if "Unexpected argument False passed to Scene.play" in err:
                 raise RuntimeError("Invalid play() arguments in scene code")
-            if "Called Scene.play with no animations" in stderr:
+            if "Called Scene.play with no animations" in err:
                 raise RuntimeError("Scene.play() was called with no animations")
-            if "'float' object is not subscriptable" in stderr:
+            if "'float' object is not subscriptable" in err:
                 raise RuntimeError("Invalid geometry arguments (floats used incorrectly)")
-            # Fallback
-            raise RuntimeError(f"Manim failed:\n{stderr.strip()}")
+            # fallback
+            raise RuntimeError(f"Manim failed:\n{err.strip()}")
     except subprocess.TimeoutExpired:
         raise RuntimeError("Manim rendering timed out")
     except Exception as e:
         raise RuntimeError(f"Error during Manim invocation: {e}")
 
-    # ─── 4) Discover the .mp4 ─────────────────────────────────────────────────────
-    mp4_files = list(run_dir.rglob("*.mp4"))
-    if not mp4_files:
+    # 5) Locate output .mp4
+    mp4s = list(run_dir.rglob("*.mp4"))
+    if not mp4s:
         raise RuntimeError(f"No .mp4 found under {run_dir!r} after rendering")
-    # Return largest by file size
-    return max(mp4_files, key=lambda p: p.stat().st_size)
+    # return the largest (by size)
+    return max(mp4s, key=lambda p: p.stat().st_size)
 
 
 def concat_videos(video_paths: list[Path], final_name: str = None) -> Path:
     """
-    Concatenate a list of mp4s into one. Fallback to re-encode if 'copy' fails.
-    Returns the Path to final.mp4.
+    Fast-concat (copy) or fall back to re-encode via ffmpeg.
+    Returns the final .mp4 Path.
     """
     run_id = uuid.uuid4().hex
     target_dir = MEDIA_ROOT / run_id
     target_dir.mkdir(parents=True, exist_ok=True)
 
-    parts_txt = target_dir / "parts.txt"
-    with parts_txt.open("w") as f:
+    parts = target_dir / "parts.txt"
+    with parts.open("w") as f:
         for vp in video_paths:
             f.write(f"file '{vp.resolve()}'\n")
 
-    final_mp4 = target_dir / (final_name or "final.mp4")
+    out = target_dir / (final_name or "final.mp4")
 
-    # Try fast concat
+    # try stream copy
     try:
         subprocess.run([
             "ffmpeg", "-y", "-f", "concat", "-safe", "0",
-            "-i", str(parts_txt),
-            "-c", "copy",
-            str(final_mp4),
+            "-i", str(parts),
+            "-c", "copy", str(out),
         ], check=True, capture_output=True, text=True)
     except subprocess.CalledProcessError:
-        # Fallback: re-encode
+        # fallback re-encode
         subprocess.run([
             "ffmpeg", "-y", "-f", "concat", "-safe", "0",
-            "-i", str(parts_txt),
+            "-i", str(parts),
             "-c:v", "libx264", "-c:a", "aac",
-            str(final_mp4),
+            str(out),
         ], check=True, capture_output=True, text=True)
 
-    if not final_mp4.exists():
-        raise RuntimeError("FFmpeg failed to produce final.mp4")
-    return final_mp4
+    if not out.exists():
+        raise RuntimeError("FFmpeg failed to produce the concatenated video")
+    return out
+
+
+def render_and_concat_all(
+    scenes: list[dict],
+    quality: str = "l",
+    timeout: int = 300
+) -> Path:
+    """
+    Given a list of {"name": str, "code": str} scenes:
+      • Renders each via execute_manim_code
+      • If one scene, returns its Path
+      • If multiple, concatenates them into one final.mp4 and returns that Path
+    """
+    videos = []
+    for idx, sc in enumerate(scenes, start=1):
+        name = sc.get("name")
+        code = sc.get("code")
+        if not name or not code:
+            raise RuntimeError(f"Scene #{idx} missing name or code")
+        video_path = execute_manim_code(code, name, quality=quality, timeout=timeout)
+        videos.append(video_path)
+
+    if not videos:
+        raise RuntimeError("No videos were rendered")
+
+    if len(videos) == 1:
+        return videos[0]
+    # else, join them
+    return concat_videos(videos)
