@@ -10,7 +10,7 @@ if not API_KEY:
 client     = groq.Client(api_key=API_KEY)
 MODEL_NAME = "llama3-70b-8192"
 
-SYSTEM_PROMPT = (
+SYSTEM = (
     "You are a deterministic code generator for 2D Manim animations. "
     "Your output must be valid Python 3 code, **strictly executable in Manim v0.17.3+**, with no explanations, markdown, or extra text. "
     "Your response must begin **exactly** with:\n\n"
