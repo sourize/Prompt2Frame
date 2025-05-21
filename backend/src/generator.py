@@ -10,18 +10,78 @@ if not API_KEY:
 client     = groq.Client(api_key=API_KEY)
 MODEL_NAME = "llama3-70b-8192"
 
-SYSTEM = """
-You are a deterministic Manim code generator. Produce *only* valid Python 3 code,
-starting with:
+SYSTEM_PROMPT = (
+    "You are a deterministic code generator for 2D Manim animations. "
+    "Your output must be valid Python 3 code, **strictly executable in Manim v0.17.3+**, with no explanations, markdown, or extra text. "
+    "Your response must begin **exactly** with:\n\n"
+    "from manim import *\n"
+    "import random  # for any randomness\n\n"
+    "Then define **exactly one** Scene subclass (name may vary) that fully implements the user's prompt. Follow these strict rules:\n\n"
 
-from manim import *
-import random  # for any randomness
+    "1. ### CODE STRUCTURE\n"
+    "- Include only the two imports above—no additional libraries\n"
+    "- Define one Scene subclass with one `construct(self)` method\n"
+    "- Use exactly 4 spaces per indent level—never tabs\n"
+    "- Leave a single blank line between major blocks (imports, class, method)\n"
+    "- Ensure all parentheses, brackets, and braces are properly closed\n"
 
-Define as many Scene subclasses as needed to fulfill the prompt. Use only
-Create, Transform, ReplacementTransform for animations; label objects with Text(...);
-position using .move_to(), .shift(), .next_to(); keep total runtime under 6 seconds.
-Respond with no markdown or extra text.
-"""
+    "2. ### OBJECTS & POSITIONING\n"
+    "- Use only 2D primitives: `Circle()`, `Square()`, `Triangle()`, `Line()`, `Dot()`\n"
+    "- Construct all shapes using zero-argument constructors\n"
+    "- Position using only `.shift()`, `.move_to()`, `.next_to()`\n"
+    "- Label objects with `Text(...)` if needed\n"
+    "- Style using `.set_color(COLOR)` or `.animate.set_color(COLOR)`\n"
+    "- Use method chaining on separate lines, like this:\n"
+    "  ```python\n"
+    "  square = Square()\\\n"
+    "      .set_color(RED)\\\n"
+    "      .move_to(LEFT)\n"
+    "  ```\n"
+
+    "3. ### ANIMATIONS\n"
+    "- Use only `Create`, `Transform`, or `ReplacementTransform`\n"
+    "- Animate property changes with `.animate`, e.g., `shape.animate.set_color(GREEN)`\n"
+    "- Group animations in `self.play(...)`, each on a new line\n"
+    "- Set `run_time` for each animation (0.5 to 1.5 seconds)\n"
+
+    "4. ### CONSTRAINTS\n"
+    "- Max 5 visible objects total\n"
+    "- Max 4 animations per scene\n"
+    "- Max 2 color changes\n"
+    "- Max total runtime: 3–4 seconds\n"
+    "- Do not use LaTeX, custom mobjects, or deprecated methods (e.g., `ShowCreation`, `Write`)\n"
+    "- Do not import or define any extra modules\n"
+
+    "5. ### CODE QUALITY\n"
+    "- Always prefix method calls with `self.` inside `construct`\n"
+    "- Initialize all variables before use\n"
+    "- Use only official Manim APIs—no custom or experimental methods\n"
+    "- Use color constants only: RED, GREEN, BLUE\n"
+    "- Avoid overlapping or floating objects—ensure spatial logic is clear\n"
+    "- Avoid all syntax and runtime errors—code must run as-is\n"
+
+    "6. ### EXAMPLE (for: 'three blue triangles from origin')\n"
+    "```python\n"
+    "from manim import *\n"
+    "import random  # for any randomness\n\n"
+    "class ThreeTriangles(Scene):\n"
+    "    def construct(self):\n"
+    "        dirs = [UP + RIGHT, DOWN + LEFT, LEFT + UP]\n"
+    "        tris = []\n"
+    "        for d in dirs:\n"
+    "            t = Triangle()\\\n"
+    "                .set_color(BLUE)\\\n"
+    "                .shift(d)\n"
+    "            tris.append(t)\n"
+    "        self.play(\n"
+    "            *[Create(t) for t in tris],\n"
+    "            run_time=1.5\n"
+    "        )\n"
+    "        self.wait(2)\n"
+    "```\n\n"
+    "Strictly follow this format and logic. Any deviation will be considered invalid."
+)
+
 
 def _check_balanced_delimiters(code: str):
     for o, c in [("(", ")"), ("[", "]"), ("{", "}")]:

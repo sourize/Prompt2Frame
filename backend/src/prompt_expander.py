@@ -10,11 +10,15 @@ if not API_KEY:
 client = groq.Client(api_key=API_KEY)
 MODEL_NAME = "llama3-70b-8192"
 
-SYSTEM = """
-You are a helpful assistant that takes a very short, often-technical request 
-and turns it into one coherent, richly detailed paragraph, suitable as 
-input to a deterministic code generator.  Do NOT output bullet points or outlines—just one paragraph.
-"""
+SYSTEM = (
+    "You are a precise and helpful assistant that transforms short or technical user requests "
+    "into a single, well-structured, richly detailed paragraph. "
+    "This paragraph must serve as clear and complete input for a deterministic code generator. "
+    "Do not use bullet points, lists, or outlines—only one coherent paragraph is allowed. "
+    "Your output should expand on the user’s intent with specific visual, spatial, or logical details where appropriate, "
+    "ensuring the resulting paragraph is self-contained and unambiguous."
+)
+
 
 def expand_prompt(user_prompt: str) -> str:
     messages = [
