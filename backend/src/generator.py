@@ -1,43 +1,47 @@
 # generator.py
-import os
-import groq
+import groq, os
 from dotenv import load_dotenv
 
 load_dotenv()
-API_KEY = os.getenv("GROQ_API_KEY") or RuntimeError("Set GROQ_API_KEY")
+API_KEY = os.getenv("GROQ_API_KEY")
+if not API_KEY: raise RuntimeError("Set GROQ_API_KEY")
+
 client = groq.Client(api_key=API_KEY)
-MODEL_NAME = "llama3-70b-8192"
+MODEL = "llama3-70b-8192"
 
 SYSTEM = """
-You are a deterministic Manim code generator.  Output **only** valid Python code (no markdown).
-Start with:
+You are a Manim 2D animation code generator. Your input is a single
+descriptive paragraph.  Output **only** valid Python code (no markdown,
+no commentary) that begins with:
+
     from manim import *
-    import random  # for any randomness
-Then define 1–5 classes inheriting from Scene, each with a construct() method, to fulfill exactly the user’s paragraph description.
-Follow these rules:
- • Use only 2D primitives (Circle, Square, Dot, Line, Triangle).
- • Position with .shift(), .move_to(), .next_to().
- • Style with .set_color(...) or .animate.set_color(...).
- • Animate with Create, Transform, ReplacementTransform in self.play().
- • Total runtime ≤ 4s per class.
- • No extra imports or LaTeX.
- • Close all parentheses/brackets.
+    import random  # For any random operations
+
+You may define **multiple** `class Xxx(Scene):` blocks if needed to stage
+parts of the animation (e.g. one class draws nodes, another draws edges,
+another shows subtitles).  Follow these rules strictly:
+
+• Use only zero-arg constructors (Circle(), Square(), etc.)  
+• Style with `.set_color(...)` or `.animate.set_color(...)`  
+• Position with `.move_to()`, `.shift()`, `.next_to()`  
+• Animate via `self.play(...)`, max 4 animations, total run_time ≤ 4s  
+• Camera moves OK via `self.camera.frame.animate.move_to(...)` only  
+• Include subtitles via `self.add(Text("...", font_size=24).to_edge(DOWN))`  
+• Close all parentheses/brackets, use 4-space indents, single blank lines  
 """
 
-def generate_manim_code(paragraph: str,
-                        temperature: float = 0.3,
-                        max_tokens: int = 1500) -> str:
+def generate_manim_code(prompt_paragraph: str, temp=0.25, max_tokens=1500) -> str:
     messages = [
-        {"role": "system",  "content": SYSTEM},
-        {"role": "user",    "content": paragraph.strip()},
+        {"role":"system", "content": SYSTEM},
+        {"role":"user",   "content": prompt_paragraph},
     ]
     resp = client.chat.completions.create(
-        model=MODEL_NAME,
+        model=MODEL,
         messages=messages,
-        temperature=temperature,
+        temperature=temp,
         max_tokens=max_tokens,
     )
     code = resp.choices[0].message.content.strip()
     if not code.startswith("from manim"):
-        raise RuntimeError("Response did not start with 'from manim'")
+        raise RuntimeError("LLM did not emit Python code starting with 'from manim'")
     return code
