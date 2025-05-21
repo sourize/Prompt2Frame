@@ -10,7 +10,7 @@ if not GROQ_API_KEY:
 client = groq.Client(api_key=GROQ_API_KEY)
 MODEL_NAME = "llama3-70b-8192"
 
-SYSTEM_PROMPT = (
+_SYSTEM_PROMPT = (
     "You are a deterministic code generator for Manim 2D animations.\n"
     "Your output must be **only valid Python code**, strictly formatted and immediately executable in Manim v0.17.3+.\n"
     "Respond with no markdown, no explanation, no extra text. Code must begin **exactly** with:\n\n"
@@ -96,10 +96,9 @@ def generate_manim_code(
     temperature: float = 0.3,
     max_tokens: int = 1500
 ) -> str:
-    """Call the LLM to generate a Manim scene. Returns raw Python code."""
     messages = [
-        {"role": "system", "content": SYSTEM_PROMPT},
-        {"role": "user", "content": prompt.strip()},
+        {"role": "system", "content": _SYSTEM_PROMPT},
+        {"role": "user",   "content": prompt.strip()},
     ]
     try:
         completion = client.chat.completions.create(

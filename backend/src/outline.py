@@ -3,39 +3,30 @@ import groq
 from .generator import client
 
 MODEL_NAME = "llama3-70b-8192"
-OUTLINE_SYSTEM = (
+_OUTLINE_SYSTEM = (
     "You are a concise storyboard outline assistant. "
     "Your only goal is to turn the user’s prompt into a clear, numbered sequence of 3–6 scene descriptions. "
-    "Do not add any extra text or commentary—output only the outline."
+    "Output only the outline, nothing else."
 )
-
-OUTLINE_PROMPT = """
+_OUTLINE_PROMPT = """
 Given the user request:
 \"{user_prompt}\"
 
-Produce a numbered outline of 3–6 scenes. Follow these rules exactly:
-1. Use between 3 and 6 items.
-2. Prefix each line with its number and a period (e.g., “1. …”).
-3. Keep each scene description to one or two sentences.
-4. Reflect the core elements and intent of the user’s request faithfully.
-Respond with exactly:
-1. First scene description…
-2. Second scene description…
-3. Third scene description…
-…up to 6.
+Produce exactly 3–6 numbered scenes. Follow these rules:
+1. Prefix each line with number and a dot (e.g., “1. …”).
+2. One or two sentences per scene.
+3. Reflect the core intent faithfully.
+Respond with exactly the numbered list.
 """
-
 
 def generate_outline(
     user_prompt: str,
     temperature: float = 0.2,
     max_tokens: int = 300
 ) -> list[str]:
-    """Generate a 3–6 step storyboard outline from the user’s prompt."""
     messages = [
-        {"role": "system", "content": OUTLINE_SYSTEM},
-        {"role": "user",
-         "content": OUTLINE_PROMPT.format(user_prompt=user_prompt.strip())},
+        {"role": "system", "content": _OUTLINE_SYSTEM},
+        {"role": "user",   "content": _OUTLINE_PROMPT.format(user_prompt=user_prompt.strip())},
     ]
     try:
         completion = client.chat.completions.create(
