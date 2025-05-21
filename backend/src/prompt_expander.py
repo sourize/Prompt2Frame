@@ -1,38 +1,31 @@
-# prompt_expander.py
-import groq
-import os
 from dotenv import load_dotenv
+import os, re
+import groq
 
 load_dotenv()
 API_KEY = os.getenv("GROQ_API_KEY")
 if not API_KEY:
-    raise RuntimeError("Please set GROQ_API_KEY in your environment")
+    raise RuntimeError("Please set GROQ_API_KEY")
 
 client = groq.Client(api_key=API_KEY)
-MODEL = "llama3-70b-8192"
+MODEL_NAME = "llama3-70b-8192"
 
 SYSTEM = (
-    "You are a single-paragraph prompt generator for Manim animations. "
-    "Given a user request, produce one self-contained descriptive paragraph that "
-    "the next model can turn directly into Python/Manim code. "
-    "- If the request is very simple (draw a circle), keep the paragraph concise. "
-    "- If it’s complex (explain a neural network), include what to label, "
-    "camera movements, subtitles, color choices, and staging details. "
-    "Do not output lists or bullet points—only one coherent paragraph."
+    "You are a prompt expansion assistant.  "
+    "Your job is to turn a short instruction into a single, richly descriptive paragraph "
+    "that fully specifies how to animate that idea in Manim, "
+    "including which objects to use, how they should move, any labels or colors, and timing."
 )
 
-def expand_prompt(user_prompt: str, temperature: float = 0.3, max_tokens: int = 300) -> str:
-    msg = [
-        {"role":"system", "content": SYSTEM},
-        {"role":"user",   "content": user_prompt.strip()},
+def expand_prompt(user_prompt: str) -> str:
+    messages = [
+        {"role":"system", "content":SYSTEM},
+        {"role":"user",   "content":user_prompt},
     ]
     resp = client.chat.completions.create(
-        model=MODEL,
-        messages=msg,
-        temperature=temperature,
-        max_tokens=max_tokens,
+        model=MODEL_NAME,
+        messages=messages,
+        temperature=0.2,
+        max_tokens=300,
     )
-    para = resp.choices[0].message.content.strip()
-    if "\n" in para or len(para.split()) < 5:
-        raise RuntimeError("Prompt expander must return a single paragraph")
-    return para
+    return resp.choices[0].message.content.strip()

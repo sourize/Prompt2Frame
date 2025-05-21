@@ -1,31 +1,35 @@
-# app.py
-import time, psutil, logging
+import time
+import uuid
+import psutil
+import logging
 from fastapi import FastAPI, HTTPException, Request, status
 from fastapi.responses import JSONResponse, FileResponse
 from fastapi.middleware.cors import CORSMiddleware
 from starlette.middleware.base import BaseHTTPMiddleware
-from diskcache import Cache
-from pathlib import Path
 
 from .prompt_expander import expand_prompt
-from .generator       import generate_manim_code
-from .executor        import execute_manim_code, concat_videos, MEDIA_ROOT
+from .generator        import generate_manim_code
+from .executor         import render_and_concat_all, MEDIA_ROOT
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
 logger = logging.getLogger("uvicorn")
-cache = Cache("cache")
 
 app = FastAPI()
-app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"])
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_methods=["GET","POST","OPTIONS"],
+    allow_headers=["*"],
+)
 
 class ResourceGuard(BaseHTTPMiddleware):
-    async def dispatch(self, req, call_next):
-        if req.url.path == "/health":
-            return await call_next(req)
+    async def dispatch(self, request: Request, call_next):
+        if request.url.path == "/health":
+            return await call_next(request)
         if psutil.cpu_percent() > 90 or psutil.virtual_memory().percent > 90:
             return JSONResponse({"error":"Server overloaded"}, status.HTTP_503_SERVICE_UNAVAILABLE)
         start = time.time()
-        resp = await call_next(req)
+        resp = await call_next(request)
         if time.time() - start > 300:
             return JSONResponse({"error":"Request timed out"}, status.HTTP_408_REQUEST_TIMEOUT)
         return resp
@@ -43,28 +47,35 @@ async def generate(request: Request):
     if not prompt:
         raise HTTPException(400, "Prompt is required")
 
-    # 1) Expand -> 2) Generate code -> 3) Render all scenes -> 4) Concat
+    # 1) Expand short user prompt into a detailed paragraph
+    detailed = expand_prompt(prompt)
+
+    # 2) Ask the LLM to spit out one large Manim script
     try:
-        expanded = expand_prompt(prompt)
-        code = generate_manim_code(expanded)
-        parts = execute_manim_code(code)  # list[Path]
-        final = parts[0] if len(parts)==1 else concat_videos(parts)
+        code = generate_manim_code(detailed)
+    except Exception as e:
+        raise HTTPException(500, f"Code‐gen error: {e}")
+
+    # 3) Render *all* Scene subclasses and concatenate
+    try:
+        final_video = render_and_concat_all(code)
     except Exception as e:
         logger.error("Generation pipeline error: %s", e)
-        raise HTTPException(500, str(e))
+        raise HTTPException(500, f"Generation pipeline error: {e}")
 
-    rel = final.resolve().relative_to(MEDIA_ROOT.resolve())
-    return {
-        "videoUrl": f"/media/videos/{rel.as_posix()}",
-    }
+    rel = final_video.resolve().relative_to(MEDIA_ROOT.resolve())
+    return {"videoUrl": f"/media/videos/{rel.as_posix()}"}
 
 @app.get("/media/videos/{path:path}")
 async def serve(path: str):
     file = MEDIA_ROOT / path
     if not file.exists():
         raise HTTPException(404, "Video not found")
-    return FileResponse(str(file), headers={
-        "Cache-Control":"no-store",
-        "Pragma":"no-cache",
-        "Expires":"0",
-    })
+    return FileResponse(
+        str(file),
+        headers={
+            "Cache-Control":"no-store, max-age=0",
+            "Pragma":"no-cache",
+            "Expires":"0"
+        }
+    )
