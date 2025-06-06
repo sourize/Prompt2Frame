@@ -1,11 +1,13 @@
 # manim-llm-service/app.py
+
 import os
 import time
 import logging
 import asyncio
 from typing import Optional
+
 from fastapi import FastAPI, HTTPException, status
-from fastapi.requests import Request
+from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
 import httpx
@@ -19,11 +21,11 @@ logging.basicConfig(
 )
 logger = logging.getLogger("llm_service")
 
-# Get the PROJECT_2 (Renderer) base URL from env var
-RENDERER_URL = os.getenv("RENDERER_URL", "").rstrip("/")
+# 1) Point this at your **LLM service** URL (this is used by your React code).
+LLM_SERVICE_URL = os.getenv("LLM_SERVICE_URL", "https://manim-llm-service.onrender.com")
 
-if not RENDERER_URL:
-    raise RuntimeError("Please set RENDERER_URL to Project 2’s /render endpoint base URL")
+if not LLM_SERVICE_URL:
+    raise RuntimeError("Please set LLM_SERVICE_URL to your deployed LLM service URL")
 
 PORT = int(os.getenv("PORT", 8000))
 
@@ -47,6 +49,15 @@ app = FastAPI(
     version="1.0.0",
 )
 
+# 2) Enable CORS so that your React frontend can call /generate-code
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],            # in production, restrict to your actual frontend domain(s)
+    allow_credentials=True,
+    allow_methods=["*"],            # allow GET, POST, OPTIONS, etc.
+    allow_headers=["*"],            # allow all headers (incl. Authorization, Content-Type, etc.)
+)
+
 
 @app.post("/generate-code", response_model=GenerateResponse)
 async def generate_code_and_delegate(req: GenerateRequest):
@@ -54,7 +65,7 @@ async def generate_code_and_delegate(req: GenerateRequest):
     user_prompt = req.prompt.strip()
     logger.info("Received /generate-code; expanding prompt")
 
-    # 1) Expand prompt (fallback if needed)
+    # 1) Expand the prompt (with fallback)
     try:
         detailed = expand_prompt_with_fallback(user_prompt)
     except PromptExpansionError as e:
@@ -63,7 +74,7 @@ async def generate_code_and_delegate(req: GenerateRequest):
 
     logger.info(f"Expanded prompt: {detailed[:60]}...")
 
-    # 2) Generate Manim code (fallback if needed)
+    # 2) Generate Manim code (with fallback)
     try:
         code = generate_manim_code_with_fallback(detailed)
     except Exception as e:
@@ -73,12 +84,17 @@ async def generate_code_and_delegate(req: GenerateRequest):
     logger.info(f"Generated code length: {len(code)} chars")
 
     # 3) Delegate to Renderer Service
+    renderer_url = os.getenv("RENDERER_URL")
+    if not renderer_url:
+        logger.error("RENDERER_URL is not set")
+        raise HTTPException(status_code=500, detail="Renderer URL not configured")
+
     payload = {
         "code": code,
         "quality": req.quality,
         "timeout": req.timeout,
     }
-    renderer_endpoint = f"{RENDERER_URL}/render"
+    renderer_endpoint = f"{renderer_url}/render"
 
     async with httpx.AsyncClient(timeout=req.timeout + 30) as client:
         try:
@@ -93,8 +109,8 @@ async def generate_code_and_delegate(req: GenerateRequest):
         raise HTTPException(status_code=502, detail=f"Renderer error: {detail}")
 
     resp_json = response.json()
-    # resp_json should contain: { "videoUrl": "...", "renderTime": X, "codeLength": Y }
-    # We’ll add expandedPrompt if it's < 200 chars
+    # resp_json should contain { "videoUrl": "<full URL>", "renderTime": X, "codeLength": Y }
+    # Optionally include expandedPrompt if not too long
     if len(detailed) < 200:
         resp_json["expandedPrompt"] = detailed
 
@@ -104,7 +120,7 @@ async def generate_code_and_delegate(req: GenerateRequest):
 
 
 @app.get("/health")
-def health():
+async def health():
     return {"status": "ok"}
 
 
