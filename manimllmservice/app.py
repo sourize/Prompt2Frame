@@ -19,12 +19,12 @@ logging.basicConfig(
 )
 logger = logging.getLogger("llm_service")
 
-# ─── Ensure RENDERER_URL is set (no trailing slash) ───
+# ← This must be exactly your deployed renderer service (no trailing slash)
 RENDERER_URL = os.getenv("RENDERER_URL", "").rstrip("/")
 if not RENDERER_URL:
     raise RuntimeError(
-        "Please set RENDERER_URL to your deployed renderer service’s base URL, "
-        "e.g. https://manim-renderer-service.onrender.com"
+        "Please set RENDERER_URL to project 2’s base URL "
+        "(e.g. https://manim-renderer-service.onrender.com)"
     )
 
 PORT = int(os.getenv("PORT", 8000))
@@ -49,13 +49,13 @@ app = FastAPI(
     version="1.0.0",
 )
 
-# ─── Add CORS middleware ───
+# ─── Install CORS before any routes ───────────────────────────────────────────────────
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],         # In production, replace "*" with your actual frontend URL(s).
-    allow_credentials=True,
-    allow_methods=["*"],         # Allow all HTTP methods (GET, POST, OPTIONS, etc.)
+    allow_origins=["*"],
+    allow_methods=["*"],
     allow_headers=["*"],
+    allow_credentials=True,
 )
 
 
@@ -81,7 +81,8 @@ async def generate_code_and_delegate(req: GenerateRequest):
         logger.error(f"Code generation error: {e}")
         raise HTTPException(status_code=500, detail="Code generation failed")
 
-    logger.info(f"Generated Manim code length: {len(code)} chars")
+    code_len = len(code)
+    logger.info(f"Generated Manim code length: {code_len} chars")
 
     # 3) Delegate to Renderer
     payload = {
@@ -91,6 +92,8 @@ async def generate_code_and_delegate(req: GenerateRequest):
     }
     renderer_endpoint = f"{RENDERER_URL}/render"
 
+    # Measure rendering time separately
+    render_start = time.time()
     async with httpx.AsyncClient(timeout=req.timeout + 30) as client:
         try:
             response = await client.post(renderer_endpoint, json=payload)
@@ -98,26 +101,39 @@ async def generate_code_and_delegate(req: GenerateRequest):
             logger.error(f"Failed to contact renderer: {e}")
             raise HTTPException(status_code=502, detail="Renderer unavailable")
 
+    render_elapsed = time.time() - render_start
+
     if response.status_code != 200:
+        raw = response.text
+        logger.error(
+            f"Renderer returned {response.status_code} with BODY:\n{raw}\n"
+        )
+        # Attempt to parse JSON “detail” if possible
         try:
             detail = response.json().get("detail", "Unknown error from renderer")
         except Exception:
-            detail = "Non‐JSON error from renderer"
-        logger.error(f"Renderer returned {response.status_code}: {detail}")
+            detail = f"Non-JSON error from renderer: {raw[:200]!r}"
         raise HTTPException(status_code=502, detail=f"Renderer error: {detail}")
 
+    # At this point response.json() should be e.g. { "videoUrl": "/media/videos/…", ... }
     resp_json = response.json()
-    # ── Prepend the renderer host so the front-end can fetch the .mp4
+
+    # ─── Prepend the renderer’s hostname so that front-end can fetch the .mp4 ──────────
     raw_path = resp_json.get("videoUrl", "")
     full_video_url = f"{RENDERER_URL}{raw_path}"
     resp_json["videoUrl"] = full_video_url
+
+    # Add our two computed fields:
+    resp_json["renderTime"] = round(render_elapsed, 2)
+    resp_json["codeLength"] = code_len
 
     # Add expandedPrompt if < 200 chars
     if len(detailed) < 200:
         resp_json["expandedPrompt"] = detailed
 
-    elapsed = time.time() - start_time
-    logger.info(f"Total time (LLM + code + render): {elapsed:.2f}s")
+    total_elapsed = time.time() - start_time
+    logger.info(f"Total time (LLM + code + render): {total_elapsed:.2f}s")
+
     return resp_json
 
 
@@ -128,4 +144,5 @@ def health():
 
 if __name__ == "__main__":
     import uvicorn
+
     uvicorn.run(app, host="0.0.0.0", port=PORT)
