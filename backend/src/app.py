@@ -2,6 +2,7 @@ import time
 import psutil
 import logging
 import asyncio
+import os
 from contextlib import asynccontextmanager
 from typing import Dict, Any, Optional
 from pathlib import Path
@@ -16,26 +17,19 @@ from .prompt_expander import expand_prompt
 from .generator import generate_manim_code_with_fallback
 from .executor import render_and_concat_all, MEDIA_ROOT
 
+# Enhanced logging configuration
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
+    handlers=[
+        logging.StreamHandler()  # Railway prefers stdout logging
+    ]
+)
+
 logger = logging.getLogger("manim_app")
 
-# Enhanced logging configuration
-try:
-    logging.basicConfig(
-        level=logging.INFO,
-        format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
-        handlers=[
-            logging.FileHandler("app.log", mode='a'),
-            logging.StreamHandler()
-        ]
-    )
-except Exception as e:
-    # Fallback to console-only logging if file logging fails
-    logging.basicConfig(
-        level=logging.INFO,
-        format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
-        handlers=[logging.StreamHandler()]
-    )
-    logger.warning(f"Failed to set up file logging: {e}")
+# Get port from environment variable (Railway requirement)
+PORT = int(os.getenv("PORT", 8000))
 
 # Request/Response models
 class GenerateRequest(BaseModel):
@@ -54,7 +48,8 @@ app_state = {
     "active_requests": 0,
     "total_requests": 0,
     "failed_requests": 0,
-    "cache_hits": 0
+    "cache_hits": 0,
+    "start_time": time.time()
 }
 
 @asynccontextmanager
@@ -79,9 +74,10 @@ app = FastAPI(
     lifespan=lifespan
 )
 
+# Configure CORS for Railway
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=["*"],  # In production, replace with your frontend domain
     allow_methods=["GET", "POST", "OPTIONS"],
     allow_headers=["*"],
     allow_credentials=True,
@@ -213,16 +209,34 @@ async def cleanup_old_files(max_age_hours: int = 24):
 @app.get("/health")
 async def health_check():
     """Enhanced health check with system metrics."""
-    return {
-        "status": "healthy",
-        "timestamp": time.time(),
-        "system": {
-            "cpu_percent": psutil.cpu_percent(),
-            "memory_percent": psutil.virtual_memory().percent,
-            "disk_percent": psutil.disk_usage("/").percent,
-        },
-        "app_state": app_state.copy()
-    }
+    try:
+        # Check if media directory is writable
+        test_file = MEDIA_ROOT / "health_check.txt"
+        test_file.touch()
+        test_file.unlink()
+        
+        return {
+            "status": "healthy",
+            "timestamp": time.time(),
+            "uptime": time.time() - app_state["start_time"],
+            "system": {
+                "cpu_percent": psutil.cpu_percent(),
+                "memory_percent": psutil.virtual_memory().percent,
+                "disk_percent": psutil.disk_usage("/").percent,
+            },
+            "app_state": {
+                "active_requests": app_state["active_requests"],
+                "total_requests": app_state["total_requests"],
+                "failed_requests": app_state["failed_requests"],
+                "cache_hits": app_state["cache_hits"]
+            }
+        }
+    except Exception as e:
+        logger.error(f"Health check failed: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail=f"Health check failed: {str(e)}"
+        )
 
 @app.get("/metrics")
 async def get_metrics():
@@ -393,4 +407,11 @@ async def general_exception_handler(request: Request, exc: Exception):
 
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run(app, host="0.0.0.0", port=8000, log_level="info")
+    uvicorn.run(
+        app,
+        host="0.0.0.0",
+        port=PORT,
+        workers=4,
+        proxy_headers=True,
+        forwarded_allow_ips="*"
+    )
