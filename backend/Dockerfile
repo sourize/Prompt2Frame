@@ -41,8 +41,10 @@ RUN pip install --no-cache-dir -r requirements.txt
 # Copy the rest of the application
 COPY . .
 
-# Create media directory for video storage
-RUN mkdir -p media/videos && chmod 777 media/videos
+# Create media directory for video storage and set permissions
+RUN mkdir -p media/videos && \
+    chmod -R 777 media && \
+    chown -R nobody:nogroup media
 
 # Set environment variables
 ENV PYTHONPATH=/app
@@ -52,5 +54,12 @@ ENV PORT=8000
 # Expose the port the app runs on
 EXPOSE ${PORT}
 
+# Create a non-root user
+RUN useradd -m -u 1000 appuser && \
+    chown -R appuser:appuser /app
+
+# Switch to non-root user
+USER appuser
+
 # Command to run the application with production settings
-CMD uvicorn src.app:app --host 0.0.0.0 --port ${PORT} --workers 4 --proxy-headers --forwarded-allow-ips='*' 
+CMD uvicorn src.app:app --host 0.0.0.0 --port ${PORT} --workers 1 --proxy-headers --forwarded-allow-ips='*' --timeout-keep-alive 75 
