@@ -16,7 +16,7 @@ const App = () => {
   return (
     <QueryClientProvider client={queryClient}>
       <TooltipProvider>
-        <div className="flex flex-col min-h-screen">
+        <div className="flex flex-col min-h-screen relative pb-24">
           <Toaster />
           <Sonner />
           <BrowserRouter>

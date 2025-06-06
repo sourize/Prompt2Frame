@@ -110,16 +110,17 @@ const SearchInterface = ({ loading, setLoading }: { loading: boolean; setLoading
                 value={prompt}
                 onChange={(e) => setPrompt(e.target.value)}
                 placeholder="Ask a question..."
-                className="w-full bg-transparent border-0 text-white placeholder-gray-400 resize-none px-6 py-4 pr-16 text-base leading-relaxed focus:ring-0 focus:outline-none min-h-[60px] rounded-xl"
+                className="w-full bg-transparent border-0 text-white placeholder-gray-400 resize-none px-6 py-4 pr-16 text-base leading-relaxed focus:ring-0 focus:outline-none min-h-[60px] rounded-xl overflow-hidden"
                 rows={1}
                 style={{
                   minHeight: '60px',
                   maxHeight: '200px',
+                  height: 'auto',
                 }}
                 onInput={(e) => {
                   const target = e.target as HTMLTextAreaElement;
                   target.style.height = '60px';
-                  target.style.height = target.scrollHeight + 'px';
+                  target.style.height = `${Math.min(target.scrollHeight, 200)}px`;
                 }}
               />
 
