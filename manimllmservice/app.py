@@ -5,15 +5,13 @@ import time
 import logging
 import asyncio
 import httpx
-from pathlib import Path
-from typing import Optional
 
-from fastapi import FastAPI, HTTPException, Request, status
+from fastapi import FastAPI, HTTPException, status
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 
 from prompt_expander import expand_prompt_with_fallback, PromptExpansionError
-from generator import generate_manim_code_with_fallback, RuntimeError as CodeGenError
+from generator import generate_manim_code_with_fallback  # no more `RuntimeError as CodeGenError`
 
 # ----------------- logging setup -----------------
 logging.basicConfig(
@@ -45,7 +43,6 @@ app.add_middleware(
 class GenerateRequest(BaseModel):
     prompt: str = Field(..., min_length=1, max_length=500, description="Animation prompt")
     timeout: int = Field(300, ge=60, le=600, description="Timeout in seconds (for rendering)")
-    # We ignore `quality` here because the requirement is: always generate "m"
 
 class GenerateResponse(BaseModel):
     videoUrl: str
@@ -62,15 +59,14 @@ async def generate_code_and_delegate(req: GenerateRequest):
     1) Expand the prompt via expand_prompt_with_fallback (with retries).
     2) Generate Manim code via generate_manim_code_with_fallback (with retries).
     3) POST <code, "m", timeout> to {RENDERER_URL}/render.
-    4) If renderer responds 200 with JSON { "videoUrl": "/media/videos/…/final_animation.mp4" },
+    4) If renderer responds 200 with JSON { "videoUrl": "/media/videos/.../final_animation.mp4" },
        prepend RENDERER_URL to form a full URL and return it.
-    5) If the renderer returns non‐JSON or status != 200, raise HTTP 500 with a clear message.
+    5) If the renderer returns non‐JSON or status != 200, raise HTTP 502 with a clear message.
     """
     logger.info("Received /generate-code; expanding prompt")
 
     # --- 1) Expand prompt ---
     try:
-        # This may raise PromptExpansionError
         expanded = await asyncio.to_thread(expand_prompt_with_fallback, req.prompt)
     except PromptExpansionError as e:
         logger.error(f"Prompt expansion failed: {e}")
@@ -84,7 +80,7 @@ async def generate_code_and_delegate(req: GenerateRequest):
     # --- 2) Generate Manim code ---
     try:
         code = await asyncio.to_thread(generate_manim_code_with_fallback, expanded)
-    except CodeGenError as e:
+    except Exception as e:
         logger.error(f"Code generation failed: {e}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
@@ -116,7 +112,6 @@ async def generate_code_and_delegate(req: GenerateRequest):
     # If renderer responded with non‐200, try to parse JSON error if any
     if response.status_code != 200:
         text = response.text.strip()
-        # If response is JSON, extract its "detail" or "error"
         try:
             body = response.json()
             detail = body.get("detail") or body.get("error") or str(body)
@@ -128,7 +123,7 @@ async def generate_code_and_delegate(req: GenerateRequest):
             detail=f"Renderer failed: {detail}"
         )
 
-    # At this point, status_code == 200. Expect JSON like { "videoUrl": "/media/videos/…/final.mp4" }
+    # At this point, status_code == 200. Expect JSON like { "videoUrl": "/media/videos/.../final_animation.mp4" }
     try:
         data = response.json()
     except ValueError:
