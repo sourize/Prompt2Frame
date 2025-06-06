@@ -1,144 +1,193 @@
-# manimllmservice/app.py
+# manim_renderer/app.py
 
 import os
-import time
+import shutil
+import tempfile
+import uuid
+import subprocess
 import logging
+import time
+from pathlib import Path
+from typing import List
+
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
-from pydantic import BaseModel, Field
-import httpx
-import json  # for JSONDecodeError
+from pydantic import BaseModel
 
-from prompt_expander import expand_prompt_with_fallback, PromptExpansionError
-from generator import generate_manim_code_with_fallback
-
+# -------------- configure logging --------------
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
 )
-logger = logging.getLogger("llm_service")
+logger = logging.getLogger("renderer_service")
 
-LLM_SERVICE_URL = os.getenv("LLM_SERVICE_URL", "https://manim-llm-service.onrender.com")
-RENDERER_URL    = os.getenv("RENDERER_URL")  # e.g. "https://manim-renderer-service.onrender.com"
-if not RENDERER_URL:
-    raise RuntimeError("Please set RENDERER_URL to your deployed renderer service URL")
+# -------------- ensure a MEDIA_ROOT directory --------------
+MEDIA_ROOT = Path(os.path.abspath("media/videos"))
+MEDIA_ROOT.mkdir(parents=True, exist_ok=True)
 
-PORT = int(os.getenv("PORT", 8000))
-
-
-class GenerateRequest(BaseModel):
-    prompt: str = Field(..., min_length=1, max_length=500)
-    quality: str = Field("m", pattern="^[lmh]$")
-    timeout: int = Field(300, ge=60, le=600)
-
-
-class GenerateResponse(BaseModel):
-    videoUrl: str
-    renderTime: float
-    codeLength: int
-    expandedPrompt: str | None = None
-
-
+# -------------- FastAPI + CORS setup --------------
 app = FastAPI(
-    title="Manim LLM Service",
+    title="Manim Renderer Service",
     version="1.0.0",
 )
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],       # in production, restrict this to your frontend
-    allow_credentials=True,
+    allow_origins=["*"],  # in production, lock this down
     allow_methods=["*"],
     allow_headers=["*"],
+    allow_credentials=True,
 )
 
+# -------------- request/response models --------------
+class RenderRequest(BaseModel):
+    code: str
+    quality: str  # "l", "m", or "h"
+    timeout: int  # in seconds
 
-@app.post("/generate-code", response_model=GenerateResponse)
-async def generate_code_and_delegate(req: GenerateRequest):
-    start_time = time.time()
-    user_prompt = req.prompt.strip()
-    logger.info("Received /generate-code; expanding prompt")
+class RenderResponse(BaseModel):
+    videoUrl: str
 
-    # 1) Expand prompt (with fallback)
+
+# -------------- helper: run a shell command with timeout --------------
+def run_command(cmd: List[str], timeout: int) -> None:
+    proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
     try:
-        detailed = expand_prompt_with_fallback(user_prompt)
-    except PromptExpansionError as e:
-        logger.error(f"Prompt expansion error: {e}")
-        raise HTTPException(status_code=500, detail="Prompt expansion failed")
+        stdout, stderr = proc.communicate(timeout=timeout)
+    except subprocess.TimeoutExpired:
+        proc.kill()
+        proc.communicate()
+        raise RuntimeError(f"Command timed out: {' '.join(cmd)}")
+    if proc.returncode != 0:
+        raise RuntimeError(f"Command failed (exit {proc.returncode}): {stderr or stdout}")
 
-    logger.info(f"Expanded prompt: {detailed[:60]}...")
 
-    # 2) Generate Manim code (with fallback)
+# -------------- helper: extract scene names from code (very minimal AST check) --------------
+import ast
+def extract_scene_names(code: str) -> List[str]:
     try:
-        code = generate_manim_code_with_fallback(detailed)
+        tree = ast.parse(code)
+    except SyntaxError as e:
+        raise RuntimeError(f"Invalid Python syntax: {e}")
+    scenes = []
+    for node in tree.body:
+        if isinstance(node, ast.ClassDef):
+            for base in node.bases:
+                if (isinstance(base, ast.Name) and base.id == "Scene") or (
+                    isinstance(base, ast.Attribute) and base.attr == "Scene"
+                ):
+                    scenes.append(node.name)
+    if not scenes:
+        raise RuntimeError("No Scene subclass found in code")
+    return scenes
+
+
+# -------------- the /render endpoint --------------
+@app.post("/render", response_model=RenderResponse)
+async def render_endpoint(req: RenderRequest):
+    logger.info(f"Starting rendering (quality={req.quality}, timeout={req.timeout}s)")
+
+    # 1) Validate quality
+    if req.quality not in ("l", "m", "h"):
+        raise HTTPException(status_code=400, detail="Invalid quality. Must be 'l','m', or 'h'.")
+
+    # 2) Extract scene names
+    try:
+        scenes = extract_scene_names(req.code)
     except Exception as e:
-        logger.error(f"Code generation error: {e}")
-        raise HTTPException(status_code=500, detail="Code generation failed")
+        logger.error(f"Scene extraction failed: {e}")
+        raise HTTPException(status_code=400, detail=str(e))
 
-    logger.info(f"Generated code length: {len(code)} chars")
-
-    # 3) Delegate to the Renderer Service
-    payload = {
-        "code": code,
-        "quality": req.quality,   # hardcoded 'm' from frontend
-        "timeout": req.timeout,
-    }
-    renderer_endpoint = f"{RENDERER_URL}/render"
-
-    async with httpx.AsyncClient(timeout=req.timeout + 30) as client:
-        try:
-            response = await client.post(renderer_endpoint, json=payload)
-        except httpx.RequestError as e:
-            logger.error(f"Failed to contact renderer: {e}")
-            raise HTTPException(status_code=502, detail="Renderer unavailable")
-
-    # 4) If renderer returned non-200, try to parse JSON—if it isn't JSON, catch that
-    if response.status_code != 200:
-        detail_message = "Unknown error from renderer"
-        try:
-            # Attempt to parse JSON
-            detail_message = response.json().get("detail", detail_message)
-        except json.JSONDecodeError:
-            logger.error(f"Renderer returned non‐JSON ({response.status_code}): {response.text}")
-            detail_message = f"Renderer failed with status {response.status_code}"
-
-        raise HTTPException(status_code=502, detail=f"Renderer error: {detail_message}")
-
-    # 5) At this point, renderer returned 200 with JSON
+    # 3) Create a temporary working directory
+    work_dir = Path(tempfile.mkdtemp(prefix="manim_render_"))
     try:
-        resp_json = response.json()
-    except json.JSONDecodeError:
-        logger.error(f"Renderer returned 200 but invalid JSON: {response.text}")
-        raise HTTPException(status_code=502, detail="Renderer returned invalid JSON")
+        # 3a) Write code to file
+        script_path = work_dir / "animation_script.py"
+        script_path.write_text(req.code, encoding="utf-8")
 
-    # 6) Convert relative videoUrl to full URL
-    raw_video = resp_json.get("videoUrl", "")
-    if raw_video.startswith("/"):
-        resp_json["videoUrl"] = f"{RENDERER_URL}{raw_video}"
+        # 3b) Create a media directory under work_dir
+        media_dir = work_dir / "media"
+        media_dir.mkdir(parents=True, exist_ok=True)
 
-    # 7) Attach expandedPrompt if short enough
-    if len(detailed) < 200:
-        resp_json["expandedPrompt"] = detailed
+        # 3c) Create a unique output directory under MEDIA_ROOT
+        run_id = f"{uuid.uuid4().hex}_{int(time.time())}"
+        final_dir = MEDIA_ROOT / run_id
+        final_dir.mkdir(parents=True, exist_ok=True)
+        output_file = final_dir / "final_animation.mp4"
 
-    elapsed = time.time() - start_time
-    logger.info(f"Total time (LLM+code+render): {elapsed:.2f}s")
-    return resp_json
+        # 4) Build the Manim command
+        cmd = [
+            "manim",
+            "render",
+            str(script_path),
+            *scenes,
+            f"-q{req.quality}",
+            "--disable_caching",
+            "--media_dir", str(media_dir),
+            "--verbosity", "WARNING",
+        ]
+        # Lower frame rate for “low” quality
+        if req.quality == "l":
+            cmd += ["--frame_rate", "15"]
+
+        logger.info(f"Running Manim: {' '.join(cmd)}")
+        run_command(cmd, timeout=req.timeout)
+
+        # 5) Find all .mp4 files generated by Manim
+        video_files = list(media_dir.rglob("*.mp4"))
+        if not video_files:
+            raise RuntimeError("No .mp4 files found in Manim output folder")
+
+        # 6) If there are multiple scenes, concatenate them
+        if len(video_files) == 1:
+            # Just copy it
+            shutil.copy2(video_files[0], output_file)
+        else:
+            # Write a temporary “concat.txt”
+            concat_txt = work_dir / "concat.txt"
+            with open(concat_txt, "w") as f:
+                for v in sorted(video_files):
+                    f.write(f"file '{v.resolve()}'\n")
+            concat_cmd = [
+                "ffmpeg",
+                "-y",
+                "-f", "concat",
+                "-safe", "0",
+                "-i", str(concat_txt),
+                "-c", "copy",
+                str(output_file),
+            ]
+            logger.info(f"Running ffmpeg: {' '.join(concat_cmd)}")
+            run_command(concat_cmd, timeout=120)
+
+        # 7) Final sanity check
+        if not output_file.exists() or output_file.stat().st_size < 1024:
+            raise RuntimeError("Final video is missing or too small")
+
+        rel_path = output_file.resolve().relative_to(MEDIA_ROOT.resolve())
+        video_url = f"/media/videos/{rel_path.as_posix()}"
+        logger.info(f"Rendering done → {video_url}")
+        return RenderResponse(videoUrl=video_url)
+
+    except RuntimeError as e:
+        logger.error(f"Rendering pipeline failed: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+    finally:
+        # 8) Clean up the temporary work_dir
+        try:
+            shutil.rmtree(work_dir)
+        except Exception:
+            pass
 
 
 @app.get("/health")
-async def health():
+async def health_check():
     return {"status": "ok"}
 
 
 if __name__ == "__main__":
-    import os
     import uvicorn
 
-    # Read Render’s PORT (fall back to 10000 locally)
-    port = int(os.environ.get("PORT", 10000))
-
-    uvicorn.run(
-        app,
-        host="0.0.0.0",
-        port=port,
-    )
+    # ‼️ Bind to $PORT, not a hard-coded port! ‼️
+    port = int(os.getenv("PORT", 10000))
+    uvicorn.run(app, host="0.0.0.0", port=port)
