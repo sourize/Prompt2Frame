@@ -19,8 +19,8 @@ export default function SearchInterface({ loading, setLoading }: { loading: bool
 
     if (!prompt.trim()) {
       toast({
-        title: "Empty prompt",
-        description: "Please enter a prompt to generate an animation.",
+        title: "Prompt Required",
+        description: "Please enter a prompt before generating.",
         variant: "destructive",
       });
       return;
@@ -29,32 +29,31 @@ export default function SearchInterface({ loading, setLoading }: { loading: bool
     setLoading(true);
     setError('');
     setVideoUrl('');
-    if (videoRef.current) videoRef.current.load();
 
     try {
       toast({
-        title: "Generating animation",
-        description: "This may take a minute...",
+        title: "Generating...",
+        description: "Hang tight while we generate your animation!",
       });
 
       const response = await axios.post(`${LLM_SERVICE_URL}/generate-code`, {
         prompt,
-        quality: "m",
+        quality: "m", // 🔧 hardcoded medium
         timeout: 300,
       });
 
-      const returnedUrl = response.data.videoUrl;
-      setVideoUrl(returnedUrl + `?t=${Date.now()}`);
+      const videoUrlFromBackend = response.data.videoUrl;
+      setVideoUrl(`${videoUrlFromBackend}?t=${Date.now()}`);
 
       toast({
         title: "Success!",
-        description: "Your animation has been generated successfully.",
+        description: "Your animation is ready 🎬",
       });
     } catch (err: any) {
-      const message = err.response?.data?.error || "Failed to generate animation. Please try again.";
+      const message = err.response?.data?.error || "Something went wrong. Try again.";
       setError(message);
       toast({
-        title: "Generation failed",
+        title: "Failed to generate",
         description: message,
         variant: "destructive",
       });
@@ -64,27 +63,27 @@ export default function SearchInterface({ loading, setLoading }: { loading: bool
   };
 
   return (
-    <div className="w-full flex flex-col items-center space-y-6 mt-4">
-      <form onSubmit={handleSubmit} className="w-full max-w-2xl flex flex-col space-y-4 px-4">
+    <div className="w-full flex flex-col items-center space-y-6">
+      <form onSubmit={handleSubmit} className="w-full max-w-xl flex flex-col items-center space-y-4">
         <Input
           value={prompt}
           onChange={(e) => setPrompt(e.target.value)}
           placeholder="Describe your animation..."
-          className="text-lg py-6"
+          className="w-full"
         />
         <Button type="submit" disabled={loading}>
-          {loading ? "Generating..." : "Generate Animation"}
+          {loading ? "Generating..." : "Generate"}
         </Button>
       </form>
 
-      {error && <p className="text-red-500 text-center">{error}</p>}
+      {error && <p className="text-red-500">{error}</p>}
 
       {videoUrl && (
         <video
           ref={videoRef}
           key={videoUrl}
           controls
-          className="max-w-full mt-6 border rounded-xl shadow-lg"
+          className="w-full max-w-3xl mt-6 rounded-xl shadow-md"
         >
           <source src={videoUrl} type="video/mp4" />
           Your browser does not support the video tag.
