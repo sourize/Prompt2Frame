@@ -1,11 +1,13 @@
+# manimllmservice/app.py
+
 import os
 import time
 import logging
-
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 import httpx
+import json  # for JSONDecodeError
 
 from prompt_expander import expand_prompt_with_fallback, PromptExpansionError
 from generator import generate_manim_code_with_fallback
@@ -18,7 +20,6 @@ logger = logging.getLogger("llm_service")
 
 LLM_SERVICE_URL = os.getenv("LLM_SERVICE_URL", "https://manim-llm-service.onrender.com")
 RENDERER_URL    = os.getenv("RENDERER_URL")  # e.g. "https://manim-renderer-service.onrender.com"
-
 if not RENDERER_URL:
     raise RuntimeError("Please set RENDERER_URL to your deployed renderer service URL")
 
@@ -40,14 +41,12 @@ class GenerateResponse(BaseModel):
 
 app = FastAPI(
     title="Manim LLM Service",
-    description="Expand user prompt & generate Manim code, then forward to renderer",
     version="1.0.0",
 )
 
-# Enable CORS so your React frontend can access /generate-code
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],       # in production, lock this down to your frontend domain
+    allow_origins=["*"],       # in production, restrict this to your frontend
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -81,7 +80,7 @@ async def generate_code_and_delegate(req: GenerateRequest):
     # 3) Delegate to the Renderer Service
     payload = {
         "code": code,
-        "quality": req.quality,
+        "quality": req.quality,   # hardcoded 'm' from frontend
         "timeout": req.timeout,
     }
     renderer_endpoint = f"{RENDERER_URL}/render"
@@ -93,21 +92,31 @@ async def generate_code_and_delegate(req: GenerateRequest):
             logger.error(f"Failed to contact renderer: {e}")
             raise HTTPException(status_code=502, detail="Renderer unavailable")
 
+    # 4) If renderer returned non-200, try to parse JSON—if it isn't JSON, catch that
     if response.status_code != 200:
-        detail = response.json().get("detail", "Unknown error from renderer")
-        logger.error(f"Renderer returned {response.status_code}: {detail}")
-        raise HTTPException(status_code=502, detail=f"Renderer error: {detail}")
+        detail_message = "Unknown error from renderer"
+        try:
+            # Attempt to parse JSON
+            detail_message = response.json().get("detail", detail_message)
+        except json.JSONDecodeError:
+            logger.error(f"Renderer returned non‐JSON ({response.status_code}): {response.text}")
+            detail_message = f"Renderer failed with status {response.status_code}"
 
-    resp_json = response.json()
-    # ───────────────────────────────────────────────────────────────────────────
-    # Fix #1: convert the relative videoUrl into a full URL
+        raise HTTPException(status_code=502, detail=f"Renderer error: {detail_message}")
+
+    # 5) At this point, renderer returned 200 with JSON
+    try:
+        resp_json = response.json()
+    except json.JSONDecodeError:
+        logger.error(f"Renderer returned 200 but invalid JSON: {response.text}")
+        raise HTTPException(status_code=502, detail="Renderer returned invalid JSON")
+
+    # 6) Convert relative videoUrl to full URL
     raw_video = resp_json.get("videoUrl", "")
     if raw_video.startswith("/"):
-        # e.g. raw_video = "/media/videos/abcd1234/final_animation.mp4"
         resp_json["videoUrl"] = f"{RENDERER_URL}{raw_video}"
-    # ───────────────────────────────────────────────────────────────────────────
 
-    # Include expandedPrompt if it isn’t too long
+    # 7) Attach expandedPrompt if short enough
     if len(detailed) < 200:
         resp_json["expandedPrompt"] = detailed
 
