@@ -26,7 +26,7 @@ def get_client() -> groq.Client:
         _client = groq.Client(api_key=get_api_key())
     return _client
 
-MODEL_NAME = "llama3-70b-8192"
+MODEL_NAME = "llama-3.3-70b-versatile"
 
 # Enhanced system prompt with better error handling and validation
 SYSTEM = (
