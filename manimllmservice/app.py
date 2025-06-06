@@ -81,6 +81,10 @@ async def generate_code_and_delegate(req: GenerateRequest):
         logger.error(f"Code generation error: {e}")
         raise HTTPException(status_code=500, detail="Code generation failed")
 
+    # 2a) Ensure `from manim import *` is at the top, so constants like BROWN, GREY, etc. exist
+    if "from manim import" not in code:
+        code = "from manim import *\n\n" + code
+
     code_len = len(code)
     logger.info(f"Generated Manim code length: {code_len} chars")
 
@@ -104,18 +108,16 @@ async def generate_code_and_delegate(req: GenerateRequest):
     render_elapsed = time.time() - render_start
 
     if response.status_code != 200:
-        raw = response.text
-        logger.error(
-            f"Renderer returned {response.status_code} with BODY:\n{raw}\n"
-        )
-        # Attempt to parse JSON “detail” if possible
+        raw_body = response.text
+        logger.error(f"Renderer returned {response.status_code} with body:\n{raw_body}")
         try:
             detail = response.json().get("detail", "Unknown error from renderer")
         except Exception:
-            detail = f"Non-JSON error from renderer: {raw[:200]!r}"
+            detail = f"Non-JSON error from renderer: {raw_body[:200]!r}"
         raise HTTPException(status_code=502, detail=f"Renderer error: {detail}")
 
-    # At this point response.json() should be e.g. { "videoUrl": "/media/videos/…", ... }
+    # At this point response.json() should contain something like:
+    #   { "videoUrl": "/media/videos/xxxxxxxx/final_animation.mp4", ... }
     resp_json = response.json()
 
     # ─── Prepend the renderer’s hostname so that front-end can fetch the .mp4 ──────────
@@ -123,7 +125,7 @@ async def generate_code_and_delegate(req: GenerateRequest):
     full_video_url = f"{RENDERER_URL}{raw_path}"
     resp_json["videoUrl"] = full_video_url
 
-    # Add our two computed fields:
+    # Fill in our two computed fields:
     resp_json["renderTime"] = round(render_elapsed, 2)
     resp_json["codeLength"] = code_len
 
