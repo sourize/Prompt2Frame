@@ -60,10 +60,9 @@ const SearchInterface: React.FC<SearchInterfaceProps> = ({ loading, setLoading }
         }
       );
 
-      // Backend returns a full URL, e.g.:
-      // "https://manim-renderer-service.onrender.com/media/videos/abcd1234/final_animation.mp4"
-      const returnedUrl: string = response.data.videoUrl;
-      const fullUrl = returnedUrl + `?t=${Date.now()}`; // cache-bust
+      // Now `response.data.videoUrl` is already a FULL URL, because we fixed the backend.
+      const returnedUrl: string = response.data.videoUrl; 
+      const fullUrl = returnedUrl + `?t=${Date.now()}`; // optional cache‐bust
 
       console.log('Video URL:', fullUrl);
       setVideoUrl(fullUrl);
