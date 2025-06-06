@@ -1,103 +1,89 @@
-# Use Python 3.10 as base image
+# ─────────────────────────────────────────────────────────────────────────────
+# 1) Base image: Python 3.10 (slim) 
+# ─────────────────────────────────────────────────────────────────────────────
 FROM python:3.10-slim
 
-# Set working directory
+# ─────────────────────────────────────────────────────────────────────────────
+# 2) Set working directory
+# ─────────────────────────────────────────────────────────────────────────────
 WORKDIR /app
 
-# Install system dependencies required for Manim in smaller chunks
+# ─────────────────────────────────────────────────────────────────────────────
+# 3) Install all system dependencies in one RUN (including ffmpeg for Manim)
+# ─────────────────────────────────────────────────────────────────────────────
 RUN apt-get update && \
-    apt-get install -y --no-install-recommends \
-    build-essential \
-    python3-dev \
-    python3-pip \
-    python3-setuptools \
-    python3-wheel \
-    && rm -rf /var/lib/apt/lists/* \
-    && apt-get clean
+    DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
+      build-essential \
+      python3-dev \
+      python3-pip \
+      python3-setuptools \
+      python3-wheel \
+      libcairo2-dev \
+      libpango1.0-dev \
+      libpangocairo-1.0-0 \
+      libgdk-pixbuf2.0-dev \
+      libffi-dev \
+      shared-mime-info \
+      curl \
+      ffmpeg \
+    && rm -rf /var/lib/apt/lists/*
 
-RUN apt-get update && \
-    apt-get install -y --no-install-recommends \
-    python3-cffi \
-    libcairo2-dev \
-    libpango1.0-dev \
-    libpangocairo-1.0-0 \
-    && rm -rf /var/lib/apt/lists/* \
-    && apt-get clean
+# ─────────────────────────────────────────────────────────────────────────────
+# 4) Copy requirements.txt first (leverage Docker cache)
+# ─────────────────────────────────────────────────────────────────────────────
+COPY requirements.txt /app/requirements.txt
 
-RUN apt-get update && \
-    apt-get install -y --no-install-recommends \
-    libgdk-pixbuf2.0-dev \
-    libffi-dev \
-    shared-mime-info \
-    curl \
-    && rm -rf /var/lib/apt/lists/* \
-    && apt-get clean
+# ─────────────────────────────────────────────────────────────────────────────
+# 5) Install Python dependencies
+# ─────────────────────────────────────────────────────────────────────────────
+RUN pip install --no-cache-dir -r /app/requirements.txt
 
-# Copy requirements first to leverage Docker cache
-COPY requirements.txt .
+# ─────────────────────────────────────────────────────────────────────────────
+# 6) Copy the rest of your application code
+#    At this point, /app/src/app.py, prompt_expander.py, generator.py, executor.py, etc.
+# ─────────────────────────────────────────────────────────────────────────────
+COPY . /app
 
-# Install Python dependencies
-RUN pip install --no-cache-dir -r requirements.txt
+# ─────────────────────────────────────────────────────────────────────────────
+# 7) Create media directory for storing generated videos and give write perms
+# ─────────────────────────────────────────────────────────────────────────────
+RUN mkdir -p /app/media/videos && \
+    chmod -R 777 /app/media
 
-# Copy the rest of the application
-COPY . .
-
-# Create media directory for video storage and set permissions
-RUN mkdir -p media/videos && \
-    chmod -R 777 media && \
-    chown -R nobody:nogroup media
-
-# Set environment variables
-ENV PYTHONPATH=/app
-ENV PYTHONUNBUFFERED=1
-ENV PORT=8000
-ENV LOG_LEVEL=debug
-
-# Expose the port the app runs on
-EXPOSE ${PORT}
-
-# Create startup script
-RUN echo '#!/bin/bash\n\
-set -e\n\
-\n\
-# Set default port if not provided\n\
-if [ -z "$PORT" ]; then\n\
-    PORT=8000\n\
-fi\n\
-\n\
-echo "Using port: $PORT"\n\
-\n\
-# Start the application in the background\n\
-echo "Starting application..."\n\
-uvicorn src.app:app --host 0.0.0.0 --port "$PORT" --workers 1 --proxy-headers --forwarded-allow-ips="*" --timeout-keep-alive 75 --log-level debug &\n\
-\n\
-# Wait for the application to start\n\
-echo "Waiting for application to start..."\n\
-for i in $(seq 1 30); do\n\
-    echo "Health check attempt $i..."\n\
-    if curl -s -f "http://localhost:$PORT/health" > /dev/null; then\n\
-        echo "Application is healthy!"\n\
-        break\n\
-    fi\n\
-    if [ $i -eq 30 ]; then\n\
-        echo "Application failed to start after 30 attempts"\n\
-        exit 1\n\
-    fi\n\
-    echo "Application not ready yet, waiting..."\n\
-    sleep 2\n\
-done\n\
-\n\
-# Keep the container running\n\
-wait\n\
-' > /app/start.sh && \
-    chmod +x /app/start.sh
-
-# Create a non-root user
+# ─────────────────────────────────────────────────────────────────────────────
+# 8) Create a non-root user and give ownership of /app to that user
+# ─────────────────────────────────────────────────────────────────────────────
 RUN useradd -m -u 1000 appuser && \
     chown -R appuser:appuser /app
 
-# Switch to non-root user
+# ─────────────────────────────────────────────────────────────────────────────
+# 9) Switch to non-root user
+# ─────────────────────────────────────────────────────────────────────────────
 USER appuser
 
-# Command to run the application with production settings
-CMD ["/bin/bash", "/app/start.sh"] 
+# ─────────────────────────────────────────────────────────────────────────────
+# 10) Environment variables
+#     - PYTHONPATH=/app so that "import src.app" works
+#     - PORT=8000 (default) 
+#     - Ensure unbuffered output to see logs in real time
+# ─────────────────────────────────────────────────────────────────────────────
+ENV PYTHONPATH=/app
+ENV PYTHONUNBUFFERED=1
+ENV PORT=8000
+
+# ─────────────────────────────────────────────────────────────────────────────
+# 11) Expose port 8000 (will serve FastAPI on 0.0.0.0:8000)
+# ─────────────────────────────────────────────────────────────────────────────
+EXPOSE 8000
+
+# ─────────────────────────────────────────────────────────────────────────────
+# 12) Final command: run Uvicorn with 1 worker, proxy headers, and keep-alive
+# ─────────────────────────────────────────────────────────────────────────────
+CMD ["uvicorn", "src.app:app", \
+     "--host", "0.0.0.0", \
+     "--port", "8000", \
+     "--workers", "1", \
+     "--proxy-headers", \
+     "--forwarded-allow-ips", "*", \
+     "--timeout-keep-alive", "75", \
+     "--log-level", "info"]
