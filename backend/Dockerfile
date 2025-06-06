@@ -63,12 +63,12 @@ set -e\n\
 echo "Starting application..."\n\
 \n\
 # Start the application in the background\n\
-uvicorn src.app:app --host 0.0.0.0 --port ${PORT} --workers 1 --proxy-headers --forwarded-allow-ips="*" --timeout-keep-alive 75 --log-level debug &\n\
+uvicorn src.app:app --host 0.0.0.0 --port "${PORT:-8000}" --workers 1 --proxy-headers --forwarded-allow-ips="*" --timeout-keep-alive 75 --log-level debug &\n\
 \n\
 # Wait for the application to start\n\
 echo "Waiting for application to start..."\n\
 for i in $(seq 1 30); do\n\
-    if curl -s http://localhost:${PORT}/health > /dev/null; then\n\
+    if curl -s "http://localhost:${PORT:-8000}/health" > /dev/null; then\n\
         echo "Application is healthy!"\n\
         break\n\
     fi\n\
