@@ -54,21 +54,17 @@ const SearchInterface = ({ loading, setLoading }: { loading: boolean; setLoading
         description: "This may take a minute...",
       });
 
-      // POST to the /generate-code endpoint on the LLM service
       const response = await axios.post(
         `${LLM_SERVICE_URL}/generate-code`,
         {
           prompt,
-          quality,
+          quality: 'm', // Hardcoded to medium
           timeout: 300
         }
       );
 
-      // response.data.videoUrl is now a FULL URL, e.g.
-      // "https://manim-renderer-service.onrender.com/media/videos/abcd1234/final_animation.mp4"
       const returnedUrl: string = response.data.videoUrl;
-      const fullUrl = returnedUrl + `?t=${Date.now()}`; // cache-bust
-      console.log('Video URL:', fullUrl);
+      const fullUrl = returnedUrl + `?t=${Date.now()}`;
       setVideoUrl(fullUrl);
 
       toast({
@@ -76,7 +72,6 @@ const SearchInterface = ({ loading, setLoading }: { loading: boolean; setLoading
         description: "Your animation has been generated successfully.",
       });
     } catch (err: any) {
-      console.error('Error:', err);
       setError(err.response?.data?.error || 'Failed to generate animation. Please try again.');
       toast({
         title: "Generation failed",
