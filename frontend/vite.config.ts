@@ -15,25 +15,8 @@ export default defineConfig(({ mode }) => ({
     componentTagger(),
   ].filter(Boolean),
   resolve: {
-    alias: [
-      {
-        find: '@',
-        replacement: path.resolve(__dirname, './src')
-      }
-    ],
-    extensions: ['.mjs', '.js', '.ts', '.jsx', '.tsx', '.json']
-  },
-  build: {
-    commonjsOptions: {
-      include: [/node_modules/],
-      extensions: ['.js', '.cjs', '.ts', '.tsx']
+    alias: {
+      "@": path.resolve(__dirname, "./src"),
     },
-    rollupOptions: {
-      output: {
-        manualChunks: {
-          'ui-utils': ['./src/lib/utils.ts']
-        }
-      }
-    }
-  }
+  },
 }));
