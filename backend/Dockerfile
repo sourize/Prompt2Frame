@@ -56,28 +56,17 @@ ENV LOG_LEVEL=debug
 # Expose the port the app runs on
 EXPOSE ${PORT}
 
-# Create startup script with health check
+# Create startup script
 RUN echo '#!/bin/bash\n\
 set -e\n\
 \n\
+# Set default port if not provided\n\
+export PORT=${PORT:-8000}\n\
+echo "Using port: $PORT"\n\
+\n\
+# Start the application\n\
 echo "Starting application..."\n\
-\n\
-# Start the application in the background\n\
-uvicorn src.app:app --host 0.0.0.0 --port "${PORT:-8000}" --workers 1 --proxy-headers --forwarded-allow-ips="*" --timeout-keep-alive 75 --log-level debug &\n\
-\n\
-# Wait for the application to start\n\
-echo "Waiting for application to start..."\n\
-for i in $(seq 1 30); do\n\
-    if curl -s "http://localhost:${PORT:-8000}/health" > /dev/null; then\n\
-        echo "Application is healthy!"\n\
-        break\n\
-    fi\n\
-    echo "Attempt $i: Application not ready yet..."\n\
-    sleep 2\n\
-done\n\
-\n\
-# Keep the container running\n\
-wait\n\
+exec uvicorn src.app:app --host 0.0.0.0 --port $PORT --workers 1 --proxy-headers --forwarded-allow-ips="*" --timeout-keep-alive 75 --log-level debug\n\
 ' > /app/start.sh && \
     chmod +x /app/start.sh
 
