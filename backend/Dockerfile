@@ -29,6 +29,7 @@ RUN apt-get update && \
     libgdk-pixbuf2.0-dev \
     libffi-dev \
     shared-mime-info \
+    curl \
     && rm -rf /var/lib/apt/lists/* \
     && apt-get clean
 
@@ -50,17 +51,33 @@ RUN mkdir -p media/videos && \
 ENV PYTHONPATH=/app
 ENV PYTHONUNBUFFERED=1
 ENV PORT=8000
+ENV LOG_LEVEL=debug
 
 # Expose the port the app runs on
 EXPOSE ${PORT}
 
-# Create startup script
+# Create startup script with health check
 RUN echo '#!/bin/bash\n\
 set -e\n\
 \n\
-# Wait for the application to start\n\
 echo "Starting application..."\n\
-uvicorn src.app:app --host 0.0.0.0 --port ${PORT} --workers 1 --proxy-headers --forwarded-allow-ips="*" --timeout-keep-alive 75 --log-level debug\n\
+\n\
+# Start the application in the background\n\
+uvicorn src.app:app --host 0.0.0.0 --port ${PORT} --workers 1 --proxy-headers --forwarded-allow-ips="*" --timeout-keep-alive 75 --log-level debug &\n\
+\n\
+# Wait for the application to start\n\
+echo "Waiting for application to start..."\n\
+for i in $(seq 1 30); do\n\
+    if curl -s http://localhost:${PORT}/health > /dev/null; then\n\
+        echo "Application is healthy!"\n\
+        break\n\
+    fi\n\
+    echo "Attempt $i: Application not ready yet..."\n\
+    sleep 2\n\
+done\n\
+\n\
+# Keep the container running\n\
+wait\n\
 ' > /app/start.sh && \
     chmod +x /app/start.sh
 

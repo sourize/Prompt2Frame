@@ -212,19 +212,27 @@ async def health_check():
     try:
         logger.info("Health check started")
         
-        # Check if media directory exists and is writable
-        if not MEDIA_ROOT.exists():
-            logger.error("Media directory does not exist")
+        # Basic application state check
+        if not hasattr(app, 'state'):
+            logger.error("Application state not initialized")
             raise HTTPException(
                 status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-                detail="Media directory not found"
+                detail="Application not initialized"
+            )
+        
+        # Check if media directory exists and is writable
+        if not MEDIA_ROOT.exists():
+            logger.error(f"Media directory does not exist at {MEDIA_ROOT}")
+            raise HTTPException(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                detail=f"Media directory not found at {MEDIA_ROOT}"
             )
             
         if not os.access(MEDIA_ROOT, os.W_OK):
-            logger.error("Media directory is not writable")
+            logger.error(f"Media directory is not writable: {MEDIA_ROOT}")
             raise HTTPException(
                 status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-                detail="Media directory not writable"
+                detail=f"Media directory not writable: {MEDIA_ROOT}"
             )
         
         # Test file operations
@@ -253,6 +261,17 @@ async def health_check():
                 detail=f"Failed to get system metrics: {str(e)}"
             )
         
+        # Check if we can access the application state
+        try:
+            app_state_copy = app_state.copy()
+            logger.info("Application state check successful")
+        except Exception as e:
+            logger.error(f"Failed to access application state: {e}")
+            raise HTTPException(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                detail=f"Failed to access application state: {str(e)}"
+            )
+        
         response = {
             "status": "healthy",
             "timestamp": time.time(),
@@ -262,12 +281,10 @@ async def health_check():
                 "memory_percent": memory.percent,
                 "disk_percent": disk.percent,
             },
-            "app_state": {
-                "active_requests": app_state["active_requests"],
-                "total_requests": app_state["total_requests"],
-                "failed_requests": app_state["failed_requests"],
-                "cache_hits": app_state["cache_hits"]
-            }
+            "app_state": app_state_copy,
+            "media_root": str(MEDIA_ROOT),
+            "python_path": os.environ.get("PYTHONPATH", ""),
+            "working_directory": os.getcwd()
         }
         
         logger.info("Health check completed successfully")
