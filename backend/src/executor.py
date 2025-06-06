@@ -12,7 +12,8 @@ import os
 
 logger = logging.getLogger(__name__)
 
-MEDIA_ROOT = Path("media/videos")
+# Use absolute path for MEDIA_ROOT
+MEDIA_ROOT = Path(os.path.abspath("media/videos"))
 MEDIA_ROOT.mkdir(parents=True, exist_ok=True)
 
 class RenderError(Exception):
@@ -106,6 +107,7 @@ def _run_manim_command(cmd: List[str], timeout: int = 300) -> tuple[int, str, st
     Run a Manim command with proper error handling and timeout.
     """
     logger.info(f"Running command: {' '.join(cmd)}")
+    process = None
     
     try:
         process = subprocess.Popen(
@@ -120,11 +122,30 @@ def _run_manim_command(cmd: List[str], timeout: int = 300) -> tuple[int, str, st
         return process.returncode, stdout, stderr
         
     except subprocess.TimeoutExpired:
-        process.kill()
-        stdout, stderr = process.communicate()
+        if process:
+            try:
+                process.kill()
+                process.wait(timeout=5)  # Wait for process to terminate
+            except subprocess.TimeoutExpired:
+                process.terminate()  # Force terminate if kill doesn't work
+                process.wait(timeout=5)
+        stdout, stderr = process.communicate() if process else ("", "")
         raise RenderError(f"Manim command timed out after {timeout} seconds")
     except Exception as e:
+        if process:
+            try:
+                process.kill()
+                process.wait(timeout=5)
+            except:
+                pass
         raise RenderError(f"Failed to execute Manim command: {e}")
+    finally:
+        if process and process.poll() is None:
+            try:
+                process.kill()
+                process.wait(timeout=5)
+            except:
+                pass
 
 def _concatenate_videos(video_paths: List[Path], output_path: Path) -> None:
     """
@@ -132,16 +153,22 @@ def _concatenate_videos(video_paths: List[Path], output_path: Path) -> None:
     """
     if len(video_paths) == 1:
         # Just copy the single file
-        shutil.copy2(video_paths[0], output_path)
-        return
+        try:
+            shutil.copy2(video_paths[0], output_path)
+            return
+        except (PermissionError, OSError) as e:
+            raise RenderError(f"Failed to copy video file: {e}")
     
     # Create a temporary file list for ffmpeg
-    with tempfile.NamedTemporaryFile(mode='w', suffix='.txt', delete=False) as f:
-        concat_file = Path(f.name)
-        for video_path in video_paths:
-            f.write(f"file '{video_path.resolve()}'\n")
-    
+    concat_file = None
     try:
+        with tempfile.NamedTemporaryFile(mode='w', suffix='.txt', delete=False) as f:
+            concat_file = Path(f.name)
+            for video_path in video_paths:
+                if not video_path.exists():
+                    raise RenderError(f"Input video file not found: {video_path}")
+                f.write(f"file '{video_path.resolve()}'\n")
+        
         # Try lossless concatenation first
         cmd = [
             "ffmpeg", "-y", 
@@ -174,12 +201,15 @@ def _concatenate_videos(video_paths: List[Path], output_path: Path) -> None:
             if returncode != 0:
                 raise RenderError(f"Video concatenation failed: {stderr}")
     
+    except (PermissionError, OSError) as e:
+        raise RenderError(f"Failed to concatenate videos: {e}")
     finally:
         # Clean up temporary concat file
-        try:
-            concat_file.unlink()
-        except Exception:
-            pass
+        if concat_file and concat_file.exists():
+            try:
+                concat_file.unlink()
+            except Exception as e:
+                logger.warning(f"Failed to delete temporary concat file: {e}")
 
 def render_and_concat_all(
     code: str, 

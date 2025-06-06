@@ -16,21 +16,31 @@ from .prompt_expander import expand_prompt
 from .generator import generate_manim_code_with_fallback
 from .executor import render_and_concat_all, MEDIA_ROOT
 
-# Enhanced logging configuration
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
-    handlers=[
-        logging.FileHandler("app.log"),
-        logging.StreamHandler()
-    ]
-)
 logger = logging.getLogger("manim_app")
+
+# Enhanced logging configuration
+try:
+    logging.basicConfig(
+        level=logging.INFO,
+        format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
+        handlers=[
+            logging.FileHandler("app.log", mode='a'),
+            logging.StreamHandler()
+        ]
+    )
+except Exception as e:
+    # Fallback to console-only logging if file logging fails
+    logging.basicConfig(
+        level=logging.INFO,
+        format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
+        handlers=[logging.StreamHandler()]
+    )
+    logger.warning(f"Failed to set up file logging: {e}")
 
 # Request/Response models
 class GenerateRequest(BaseModel):
     prompt: str = Field(..., min_length=1, max_length=500, description="Animation prompt")
-    quality: str = Field("m", regex="^[lmh]$", description="Render quality: l/m/h")
+    quality: str = Field("m", pattern="^[lmh]$", description="Render quality: l/m/h")
     timeout: int = Field(300, ge=60, le=600, description="Timeout in seconds")
 
 class GenerateResponse(BaseModel):
@@ -149,16 +159,25 @@ async def cleanup_old_files(max_age_hours: int = 24):
     try:
         cutoff_time = time.time() - (max_age_hours * 3600)
         deleted_count = 0
+        error_count = 0
         
         for file_path in MEDIA_ROOT.rglob("*.mp4"):
-            if file_path.stat().st_mtime < cutoff_time:
-                try:
-                    file_path.unlink()
-                    deleted_count += 1
-                except OSError:
-                    pass
+            try:
+                if file_path.stat().st_mtime < cutoff_time:
+                    try:
+                        file_path.unlink()
+                        deleted_count += 1
+                    except PermissionError:
+                        logger.warning(f"Permission denied when deleting {file_path}")
+                        error_count += 1
+                    except OSError as e:
+                        logger.warning(f"Failed to delete {file_path}: {e}")
+                        error_count += 1
+            except OSError as e:
+                logger.warning(f"Failed to stat {file_path}: {e}")
+                error_count += 1
         
-        logger.info(f"Cleaned up {deleted_count} old video files")
+        logger.info(f"Cleaned up {deleted_count} old video files ({error_count} errors)")
     except Exception as e:
         logger.error(f"File cleanup failed: {e}")
 

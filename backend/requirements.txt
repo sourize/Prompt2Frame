@@ -5,5 +5,6 @@ diskcache==5.6.1
 psutil==5.9.8
 groq==0.4.2
 httpx==0.24.1
-manim==0.17.3
+manim==0.19.0
 gunicorn==21.2.0
+pydantic==2.5.2

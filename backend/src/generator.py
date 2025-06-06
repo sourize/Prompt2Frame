@@ -9,12 +9,23 @@ import logging
 
 logger = logging.getLogger(__name__)
 
-load_dotenv()
-API_KEY = os.getenv("GROQ_API_KEY")
-if not API_KEY:
-    raise RuntimeError("Please set GROQ_API_KEY")
+def get_api_key() -> str:
+    """Get the GROQ API key with proper error handling."""
+    load_dotenv()
+    api_key = os.getenv("GROQ_API_KEY")
+    if not api_key:
+        raise RuntimeError("Please set GROQ_API_KEY environment variable")
+    return api_key
 
-client = groq.Client(api_key=API_KEY)
+# Initialize client lazily to avoid issues during testing
+_client = None
+def get_client() -> groq.Client:
+    """Get or create the GROQ client."""
+    global _client
+    if _client is None:
+        _client = groq.Client(api_key=get_api_key())
+    return _client
+
 MODEL_NAME = "llama3-70b-8192"
 
 # Enhanced system prompt with better error handling and validation
@@ -119,6 +130,12 @@ class CodeValidator:
         for imp in required_imports:
             if imp not in code:
                 raise RuntimeError(f"Missing required import: {imp}")
+        
+        # Check for potentially dangerous imports
+        dangerous_imports = ["os", "sys", "subprocess", "shutil", "tempfile"]
+        for imp in dangerous_imports:
+            if f"import {imp}" in code or f"from {imp}" in code:
+                raise RuntimeError(f"Dangerous import detected: {imp}")
     
     @staticmethod
     def validate_scene_class(code: str) -> None:
@@ -161,6 +178,14 @@ class CodeValidator:
         # Ensure self.play() calls exist
         if "self.play(" not in code:
             logger.warning("No self.play() calls found - animation may be empty")
+        
+        # Check for potential memory issues
+        if code.count("np.array") > 20:
+            logger.warning("High number of numpy arrays created - potential memory issue")
+        
+        # Check for animation complexity
+        if code.count("self.play") > 10:
+            logger.warning("High number of animations - potential performance issue")
 
 def _clean_and_format_code(code: str) -> str:
     """Clean and format the generated code."""
@@ -204,7 +229,7 @@ def generate_manim_code(prompt: str, max_retries: int = 3) -> str:
                 {"role": "user", "content": prompt},
             ]
             
-            response = client.chat.completions.create(
+            response = get_client().chat.completions.create(
                 model=MODEL_NAME,
                 messages=messages,
                 temperature=0.2 + (attempt * 0.1),  # Slightly increase randomness on retries
@@ -248,14 +273,14 @@ def generate_manim_code_with_fallback(prompt: str) -> str:
         logger.error(f"Primary code generation failed: {e}")
         logger.info("Attempting fallback generation...")
         
-        # Simple fallback code
+        # Simple fallback code that's guaranteed to work
         fallback_code = """from manim import *
 import random
 import numpy as np
 
 class FallbackScene(Scene):
     def construct(self):
-        # Simple fallback animation
+        # Create a simple animation
         circle = Circle().set_color(BLUE)
         text = Text("Animation Error").scale(0.7).next_to(circle, DOWN)
         
