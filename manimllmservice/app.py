@@ -1,14 +1,9 @@
-# manim-llm-service/app.py
-
 import os
 import time
 import logging
-import asyncio
-from typing import Optional
 
-from fastapi import FastAPI, HTTPException, status
+from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
 import httpx
 
@@ -21,11 +16,11 @@ logging.basicConfig(
 )
 logger = logging.getLogger("llm_service")
 
-# 1) Point this at your **LLM service** URL (this is used by your React code).
 LLM_SERVICE_URL = os.getenv("LLM_SERVICE_URL", "https://manim-llm-service.onrender.com")
+RENDERER_URL    = os.getenv("RENDERER_URL")  # e.g. "https://manim-renderer-service.onrender.com"
 
-if not LLM_SERVICE_URL:
-    raise RuntimeError("Please set LLM_SERVICE_URL to your deployed LLM service URL")
+if not RENDERER_URL:
+    raise RuntimeError("Please set RENDERER_URL to your deployed renderer service URL")
 
 PORT = int(os.getenv("PORT", 8000))
 
@@ -40,7 +35,7 @@ class GenerateResponse(BaseModel):
     videoUrl: str
     renderTime: float
     codeLength: int
-    expandedPrompt: Optional[str] = None
+    expandedPrompt: str | None = None
 
 
 app = FastAPI(
@@ -49,13 +44,13 @@ app = FastAPI(
     version="1.0.0",
 )
 
-# 2) Enable CORS so that your React frontend can call /generate-code
+# Enable CORS so your React frontend can access /generate-code
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],            # in production, restrict to your actual frontend domain(s)
+    allow_origins=["*"],       # in production, lock this down to your frontend domain
     allow_credentials=True,
-    allow_methods=["*"],            # allow GET, POST, OPTIONS, etc.
-    allow_headers=["*"],            # allow all headers (incl. Authorization, Content-Type, etc.)
+    allow_methods=["*"],
+    allow_headers=["*"],
 )
 
 
@@ -65,7 +60,7 @@ async def generate_code_and_delegate(req: GenerateRequest):
     user_prompt = req.prompt.strip()
     logger.info("Received /generate-code; expanding prompt")
 
-    # 1) Expand the prompt (with fallback)
+    # 1) Expand prompt (with fallback)
     try:
         detailed = expand_prompt_with_fallback(user_prompt)
     except PromptExpansionError as e:
@@ -83,18 +78,13 @@ async def generate_code_and_delegate(req: GenerateRequest):
 
     logger.info(f"Generated code length: {len(code)} chars")
 
-    # 3) Delegate to Renderer Service
-    renderer_url = os.getenv("RENDERER_URL")
-    if not renderer_url:
-        logger.error("RENDERER_URL is not set")
-        raise HTTPException(status_code=500, detail="Renderer URL not configured")
-
+    # 3) Delegate to the Renderer Service
     payload = {
         "code": code,
         "quality": req.quality,
         "timeout": req.timeout,
     }
-    renderer_endpoint = f"{renderer_url}/render"
+    renderer_endpoint = f"{RENDERER_URL}/render"
 
     async with httpx.AsyncClient(timeout=req.timeout + 30) as client:
         try:
@@ -109,8 +99,15 @@ async def generate_code_and_delegate(req: GenerateRequest):
         raise HTTPException(status_code=502, detail=f"Renderer error: {detail}")
 
     resp_json = response.json()
-    # resp_json should contain { "videoUrl": "<full URL>", "renderTime": X, "codeLength": Y }
-    # Optionally include expandedPrompt if not too long
+    # ───────────────────────────────────────────────────────────────────────────
+    # Fix #1: convert the relative videoUrl into a full URL
+    raw_video = resp_json.get("videoUrl", "")
+    if raw_video.startswith("/"):
+        # e.g. raw_video = "/media/videos/abcd1234/final_animation.mp4"
+        resp_json["videoUrl"] = f"{RENDERER_URL}{raw_video}"
+    # ───────────────────────────────────────────────────────────────────────────
+
+    # Include expandedPrompt if it isn’t too long
     if len(detailed) < 200:
         resp_json["expandedPrompt"] = detailed
 
