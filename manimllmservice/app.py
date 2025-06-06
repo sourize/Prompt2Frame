@@ -1,156 +1,113 @@
-# llm_service/app.py
-
+# manim-llm-service/app.py
 import os
 import time
 import logging
 import asyncio
+from typing import Optional
+from fastapi import FastAPI, HTTPException, status
+from fastapi.requests import Request
+from fastapi.responses import JSONResponse
+from pydantic import BaseModel, Field
 import httpx
 
-from fastapi import FastAPI, HTTPException, status
-from fastapi.middleware.cors import CORSMiddleware
-from pydantic import BaseModel, Field
-
 from prompt_expander import expand_prompt_with_fallback, PromptExpansionError
-from generator import generate_manim_code_with_fallback  # no more `RuntimeError as CodeGenError`
+from generator import generate_manim_code_with_fallback
 
-# ----------------- logging setup -----------------
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
 )
 logger = logging.getLogger("llm_service")
 
-# ----------------- configuration -----------------
-# Point this at your deployed renderer service (Project 2)
-RENDERER_URL = os.getenv("RENDERER_URL")
+# Get the PROJECT_2 (Renderer) base URL from env var
+RENDERER_URL = os.getenv("RENDERER_URL", "").rstrip("/")
 
-# ----------------- FastAPI + CORS -----------------
-app = FastAPI(
-    title="Manim LLM Service",
-    version="1.0.0",
-    description="Takes a text prompt, expands it, generates Manim code, then delegates rendering to a separate service."
-)
+if not RENDERER_URL:
+    raise RuntimeError("Please set RENDERER_URL to Project 2’s /render endpoint base URL")
 
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["*"],        # in production, restrict to your frontend domain
-    allow_methods=["GET", "POST", "OPTIONS"],
-    allow_headers=["*"],
-    allow_credentials=True,
-)
+PORT = int(os.getenv("PORT", 8000))
 
-# ----------------- request / response models -----------------
+
 class GenerateRequest(BaseModel):
-    prompt: str = Field(..., min_length=1, max_length=500, description="Animation prompt")
-    timeout: int = Field(300, ge=60, le=600, description="Timeout in seconds (for rendering)")
+    prompt: str = Field(..., min_length=1, max_length=500)
+    quality: str = Field("m", pattern="^[lmh]$")
+    timeout: int = Field(300, ge=60, le=600)
+
 
 class GenerateResponse(BaseModel):
     videoUrl: str
+    renderTime: float
+    codeLength: int
+    expandedPrompt: Optional[str] = None
 
-# ----------------- health check -----------------
-@app.get("/health")
-async def health_check():
-    return {"status": "ok"}
 
-# ----------------- /generate-code endpoint -----------------
+app = FastAPI(
+    title="Manim LLM Service",
+    description="Expand user prompt & generate Manim code, then forward to renderer",
+    version="1.0.0",
+)
+
+
 @app.post("/generate-code", response_model=GenerateResponse)
 async def generate_code_and_delegate(req: GenerateRequest):
-    """
-    1) Expand the prompt via expand_prompt_with_fallback (with retries).
-    2) Generate Manim code via generate_manim_code_with_fallback (with retries).
-    3) POST <code, "m", timeout> to {RENDERER_URL}/render.
-    4) If renderer responds 200 with JSON { "videoUrl": "/media/videos/.../final_animation.mp4" },
-       prepend RENDERER_URL to form a full URL and return it.
-    5) If the renderer returns non‐JSON or status != 200, raise HTTP 502 with a clear message.
-    """
+    start_time = time.time()
+    user_prompt = req.prompt.strip()
     logger.info("Received /generate-code; expanding prompt")
 
-    # --- 1) Expand prompt ---
+    # 1) Expand prompt (fallback if needed)
     try:
-        expanded = await asyncio.to_thread(expand_prompt_with_fallback, req.prompt)
+        detailed = expand_prompt_with_fallback(user_prompt)
     except PromptExpansionError as e:
-        logger.error(f"Prompt expansion failed: {e}")
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Failed to expand prompt: {e}"
-        )
+        logger.error(f"Prompt expansion error: {e}")
+        raise HTTPException(status_code=500, detail="Prompt expansion failed")
 
-    logger.info(f"Expanded prompt ({len(expanded.split())} words)")
+    logger.info(f"Expanded prompt: {detailed[:60]}...")
 
-    # --- 2) Generate Manim code ---
+    # 2) Generate Manim code (fallback if needed)
     try:
-        code = await asyncio.to_thread(generate_manim_code_with_fallback, expanded)
+        code = generate_manim_code_with_fallback(detailed)
     except Exception as e:
-        logger.error(f"Code generation failed: {e}")
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Failed to generate Manim code: {e}"
-        )
+        logger.error(f"Code generation error: {e}")
+        raise HTTPException(status_code=500, detail="Code generation failed")
 
-    logger.info(f"Generated Manim code length: {len(code)} chars")
+    logger.info(f"Generated code length: {len(code)} chars")
 
-    # --- 3) Delegate rendering to renderer service ---
+    # 3) Delegate to Renderer Service
     payload = {
         "code": code,
-        "quality": "m",        # always medium quality
-        "timeout": req.timeout
+        "quality": req.quality,
+        "timeout": req.timeout,
     }
+    renderer_endpoint = f"{RENDERER_URL}/render"
 
-    renderer_endpoint = f"{RENDERER_URL.rstrip('/')}/render"
-    logger.info(f"POSTing to renderer → {renderer_endpoint}")
-
-    try:
-        async with httpx.AsyncClient(timeout=req.timeout + 30) as client:
-            response = await client.post(renderer_endpoint, json=payload)
-    except httpx.RequestError as exc:
-        logger.error(f"Failed to reach renderer: {exc}")
-        raise HTTPException(
-            status_code=status.HTTP_502_BAD_GATEWAY,
-            detail="Unable to reach renderer service"
-        )
-
-    # If renderer responded with non‐200, try to parse JSON error if any
-    if response.status_code != 200:
-        text = response.text.strip()
+    async with httpx.AsyncClient(timeout=req.timeout + 30) as client:
         try:
-            body = response.json()
-            detail = body.get("detail") or body.get("error") or str(body)
-        except ValueError:
-            detail = "Renderer returned non‐JSON: " + text.splitlines()[0]
-        logger.error(f"Renderer error: HTTP {response.status_code} → {detail}")
-        raise HTTPException(
-            status_code=status.HTTP_502_BAD_GATEWAY,
-            detail=f"Renderer failed: {detail}"
-        )
+            response = await client.post(renderer_endpoint, json=payload)
+        except httpx.RequestError as e:
+            logger.error(f"Failed to contact renderer: {e}")
+            raise HTTPException(status_code=502, detail="Renderer unavailable")
 
-    # At this point, status_code == 200. Expect JSON like { "videoUrl": "/media/videos/.../final_animation.mp4" }
-    try:
-        data = response.json()
-    except ValueError:
-        logger.error("Renderer returned 200 but non‐JSON body")
-        raise HTTPException(
-            status_code=status.HTTP_502_BAD_GATEWAY,
-            detail="Renderer returned invalid JSON"
-        )
+    if response.status_code != 200:
+        detail = response.json().get("detail", "Unknown error from renderer")
+        logger.error(f"Renderer returned {response.status_code}: {detail}")
+        raise HTTPException(status_code=502, detail=f"Renderer error: {detail}")
 
-    if "videoUrl" not in data:
-        logger.error(f"Renderer JSON missing videoUrl field: {data}")
-        raise HTTPException(
-            status_code=status.HTTP_502_BAD_GATEWAY,
-            detail="Renderer response missing 'videoUrl'"
-        )
+    resp_json = response.json()
+    # resp_json should contain: { "videoUrl": "...", "renderTime": X, "codeLength": Y }
+    # We’ll add expandedPrompt if it's < 200 chars
+    if len(detailed) < 200:
+        resp_json["expandedPrompt"] = detailed
 
-    # Build a full URL for frontend (cache‐bust with timestamp)
-    partial = data["videoUrl"].lstrip("/")  # e.g. "media/videos/abcd1234/final_animation.mp4"
-    full_url = f"{RENDERER_URL.rstrip('/')}/{partial}?t={int(time.time())}"
-    logger.info(f"Returning full videoUrl → {full_url}")
-
-    return GenerateResponse(videoUrl=full_url)
+    elapsed = time.time() - start_time
+    logger.info(f"Total time (LLM+code+render): {elapsed:.2f}s")
+    return resp_json
 
 
-# ----------------- main (Uvicorn entrypoint) -----------------
+@app.get("/health")
+def health():
+    return {"status": "ok"}
+
+
 if __name__ == "__main__":
     import uvicorn
-
-    port = int(os.getenv("PORT", 8000))
-    uvicorn.run(app, host="0.0.0.0", port=port)
+    uvicorn.run(app, host="0.0.0.0", port=PORT)
