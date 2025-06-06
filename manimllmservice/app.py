@@ -1,185 +1,161 @@
-# manim_renderer/app.py
+# llm_service/app.py
 
 import os
-import shutil
-import tempfile
-import uuid
-import subprocess
-import logging
 import time
+import logging
+import asyncio
+import httpx
 from pathlib import Path
-from typing import List
+from typing import Optional
 
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Request, status
 from fastapi.middleware.cors import CORSMiddleware
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
-# -------- logging setup --------
+from prompt_expander import expand_prompt_with_fallback, PromptExpansionError
+from generator import generate_manim_code_with_fallback, RuntimeError as CodeGenError
+
+# ----------------- logging setup -----------------
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
 )
-logger = logging.getLogger("renderer_service")
+logger = logging.getLogger("llm_service")
 
-# -------- ensure MEDIA_ROOT --------
-MEDIA_ROOT = Path(os.path.abspath("media/videos"))
-MEDIA_ROOT.mkdir(parents=True, exist_ok=True)
+# ----------------- configuration -----------------
+# Point this at your deployed renderer service (Project 2)
+RENDERER_URL = os.getenv("RENDERER_URL", "https://manim-renderer-service.onrender.com")
 
-# -------- FastAPI + CORS --------
+# ----------------- FastAPI + CORS -----------------
 app = FastAPI(
-    title="Manim Renderer Service",
+    title="Manim LLM Service",
     version="1.0.0",
+    description="Takes a text prompt, expands it, generates Manim code, then delegates rendering to a separate service."
 )
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
-    allow_methods=["*"],
+    allow_origins=["*"],        # in production, restrict to your frontend domain
+    allow_methods=["GET", "POST", "OPTIONS"],
     allow_headers=["*"],
     allow_credentials=True,
 )
 
-# -------- request / response models --------
-class RenderRequest(BaseModel):
-    code: str
-    quality: str   # "l", "m", or "h"
-    timeout: int   # in seconds
+# ----------------- request / response models -----------------
+class GenerateRequest(BaseModel):
+    prompt: str = Field(..., min_length=1, max_length=500, description="Animation prompt")
+    timeout: int = Field(300, ge=60, le=600, description="Timeout in seconds (for rendering)")
+    # We ignore `quality` here because the requirement is: always generate "m"
 
-class RenderResponse(BaseModel):
+class GenerateResponse(BaseModel):
     videoUrl: str
 
-# -------- helper to run a command with timeout --------
-def run_command(cmd: List[str], timeout: int) -> None:
-    proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
-    try:
-        stdout, stderr = proc.communicate(timeout=timeout)
-    except subprocess.TimeoutExpired:
-        proc.kill()
-        proc.communicate()
-        raise RuntimeError(f"Command timed out: {' '.join(cmd)}")
-    if proc.returncode != 0:
-        raise RuntimeError(f"Command failed (exit {proc.returncode}): {stderr or stdout}")
-
-# -------- helper to extract Scene subclass names --------
-import ast
-def extract_scene_names(code: str) -> List[str]:
-    try:
-        tree = ast.parse(code)
-    except SyntaxError as e:
-        raise RuntimeError(f"Invalid Python syntax: {e}")
-    scenes = []
-    for node in tree.body:
-        if isinstance(node, ast.ClassDef):
-            for base in node.bases:
-                if (isinstance(base, ast.Name) and base.id == "Scene") or (
-                    isinstance(base, ast.Attribute) and base.attr == "Scene"
-                ):
-                    scenes.append(node.name)
-    if not scenes:
-        raise RuntimeError("No Scene subclass found in code")
-    return scenes
-
-# -------- /render endpoint --------
-@app.post("/render", response_model=RenderResponse)
-async def render_endpoint(req: RenderRequest):
-    logger.info(f"Starting rendering (quality={req.quality}, timeout={req.timeout}s)")
-
-    # 1) Validate quality
-    if req.quality not in ("l", "m", "h"):
-        raise HTTPException(status_code=400, detail="Invalid quality. Must be 'l', 'm', or 'h'.")
-
-    # 2) Extract scene names
-    try:
-        scenes = extract_scene_names(req.code)
-    except Exception as e:
-        logger.error(f"Scene extraction failed: {e}")
-        raise HTTPException(status_code=400, detail=str(e))
-
-    # 3) Create temporary working directory
-    work_dir = Path(tempfile.mkdtemp(prefix="manim_render_"))
-    try:
-        # 3a) Write code to file
-        script_path = work_dir / "animation_script.py"
-        script_path.write_text(req.code, encoding="utf-8")
-
-        # 3b) Create media subdirectory
-        media_dir = work_dir / "media"
-        media_dir.mkdir(parents=True, exist_ok=True)
-
-        # 3c) Create unique output folder under MEDIA_ROOT
-        run_id = f"{uuid.uuid4().hex}_{int(time.time())}"
-        final_dir = MEDIA_ROOT / run_id
-        final_dir.mkdir(parents=True, exist_ok=True)
-        output_file = final_dir / "final_animation.mp4"
-
-        # 4) Build Manim command
-        cmd = [
-            "manim",
-            "render",
-            str(script_path),
-            *scenes,
-            f"-q{req.quality}",
-            "--disable_caching",
-            "--media_dir", str(media_dir),
-            "--verbosity", "WARNING",
-        ]
-        if req.quality == "l":
-            cmd += ["--frame_rate", "15"]
-
-        logger.info(f"Running Manim: {' '.join(cmd)}")
-        run_command(cmd, timeout=req.timeout)
-
-        # 5) Gather all generated .mp4 files
-        video_files = list(media_dir.rglob("*.mp4"))
-        if not video_files:
-            raise RuntimeError("No .mp4 files found in Manim output")
-
-        # 6) Concatenate if multiple scenes
-        if len(video_files) == 1:
-            shutil.copy2(video_files[0], output_file)
-        else:
-            concat_txt = work_dir / "concat.txt"
-            with open(concat_txt, "w") as f:
-                for v in sorted(video_files):
-                    f.write(f"file '{v.resolve()}'\n")
-            concat_cmd = [
-                "ffmpeg",
-                "-y",
-                "-f", "concat",
-                "-safe", "0",
-                "-i", str(concat_txt),
-                "-c", "copy",
-                str(output_file),
-            ]
-            logger.info(f"Running ffmpeg: {' '.join(concat_cmd)}")
-            run_command(concat_cmd, timeout=120)
-
-        # 7) Verify final video
-        if not output_file.exists() or output_file.stat().st_size < 1024:
-            raise RuntimeError("Final video is missing or too small")
-
-        rel_path = output_file.resolve().relative_to(MEDIA_ROOT.resolve())
-        video_url = f"/media/videos/{rel_path.as_posix()}"
-        logger.info(f"Rendering done → {video_url}")
-        return RenderResponse(videoUrl=video_url)
-
-    except RuntimeError as e:
-        logger.error(f"Rendering pipeline failed: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
-    finally:
-        # 8) Cleanup temp directory
-        try:
-            shutil.rmtree(work_dir)
-        except Exception:
-            pass
-
+# ----------------- health check -----------------
 @app.get("/health")
 async def health_check():
     return {"status": "ok"}
 
+# ----------------- /generate-code endpoint -----------------
+@app.post("/generate-code", response_model=GenerateResponse)
+async def generate_code_and_delegate(req: GenerateRequest):
+    """
+    1) Expand the prompt via expand_prompt_with_fallback (with retries).
+    2) Generate Manim code via generate_manim_code_with_fallback (with retries).
+    3) POST <code, "m", timeout> to {RENDERER_URL}/render.
+    4) If renderer responds 200 with JSON { "videoUrl": "/media/videos/…/final_animation.mp4" },
+       prepend RENDERER_URL to form a full URL and return it.
+    5) If the renderer returns non‐JSON or status != 200, raise HTTP 500 with a clear message.
+    """
+    logger.info("Received /generate-code; expanding prompt")
+
+    # --- 1) Expand prompt ---
+    try:
+        # This may raise PromptExpansionError
+        expanded = await asyncio.to_thread(expand_prompt_with_fallback, req.prompt)
+    except PromptExpansionError as e:
+        logger.error(f"Prompt expansion failed: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to expand prompt: {e}"
+        )
+
+    logger.info(f"Expanded prompt ({len(expanded.split())} words)")
+
+    # --- 2) Generate Manim code ---
+    try:
+        code = await asyncio.to_thread(generate_manim_code_with_fallback, expanded)
+    except CodeGenError as e:
+        logger.error(f"Code generation failed: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to generate Manim code: {e}"
+        )
+
+    logger.info(f"Generated Manim code length: {len(code)} chars")
+
+    # --- 3) Delegate rendering to renderer service ---
+    payload = {
+        "code": code,
+        "quality": "m",        # always medium quality
+        "timeout": req.timeout
+    }
+
+    renderer_endpoint = f"{RENDERER_URL.rstrip('/')}/render"
+    logger.info(f"POSTing to renderer → {renderer_endpoint}")
+
+    try:
+        async with httpx.AsyncClient(timeout=req.timeout + 30) as client:
+            response = await client.post(renderer_endpoint, json=payload)
+    except httpx.RequestError as exc:
+        logger.error(f"Failed to reach renderer: {exc}")
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail="Unable to reach renderer service"
+        )
+
+    # If renderer responded with non‐200, try to parse JSON error if any
+    if response.status_code != 200:
+        text = response.text.strip()
+        # If response is JSON, extract its "detail" or "error"
+        try:
+            body = response.json()
+            detail = body.get("detail") or body.get("error") or str(body)
+        except ValueError:
+            detail = "Renderer returned non‐JSON: " + text.splitlines()[0]
+        logger.error(f"Renderer error: HTTP {response.status_code} → {detail}")
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail=f"Renderer failed: {detail}"
+        )
+
+    # At this point, status_code == 200. Expect JSON like { "videoUrl": "/media/videos/…/final.mp4" }
+    try:
+        data = response.json()
+    except ValueError:
+        logger.error("Renderer returned 200 but non‐JSON body")
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail="Renderer returned invalid JSON"
+        )
+
+    if "videoUrl" not in data:
+        logger.error(f"Renderer JSON missing videoUrl field: {data}")
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail="Renderer response missing 'videoUrl'"
+        )
+
+    # Build a full URL for frontend (cache‐bust with timestamp)
+    partial = data["videoUrl"].lstrip("/")  # e.g. "media/videos/abcd1234/final_animation.mp4"
+    full_url = f"{RENDERER_URL.rstrip('/')}/{partial}?t={int(time.time())}"
+    logger.info(f"Returning full videoUrl → {full_url}")
+
+    return GenerateResponse(videoUrl=full_url)
+
+
+# ----------------- main (Uvicorn entrypoint) -----------------
 if __name__ == "__main__":
     import uvicorn
 
-    # ↑ Bind to $PORT, not a fixed port!
-    port = int(os.getenv("PORT", 10000))
+    port = int(os.getenv("PORT", 8000))
     uvicorn.run(app, host="0.0.0.0", port=port)
