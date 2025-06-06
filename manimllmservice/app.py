@@ -22,7 +22,7 @@ logger = logging.getLogger("llm_service")
 
 # ----------------- configuration -----------------
 # Point this at your deployed renderer service (Project 2)
-RENDERER_URL = os.getenv("RENDERER_URL", "https://manim-renderer-service.onrender.com")
+RENDERER_URL = os.getenv("RENDERER_URL")
 
 # ----------------- FastAPI + CORS -----------------
 app = FastAPI(
