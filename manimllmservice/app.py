@@ -1,11 +1,10 @@
-# manim-llm-service/app.py
-
 import os
 import time
 import logging
 import asyncio
 from typing import Optional
 from fastapi import FastAPI, HTTPException
+from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 import httpx
 
@@ -18,10 +17,10 @@ logging.basicConfig(
 )
 logger = logging.getLogger("llm_service")
 
-# ← This must be exactly your deployed renderer service (no trailing slash)
+# Ensure RENDERER_URL is set
 RENDERER_URL = os.getenv("RENDERER_URL", "").rstrip("/")
 if not RENDERER_URL:
-    raise RuntimeError("Please set RENDERER_URL to project 2’s base URL (e.g. https://manim-renderer-service.onrender.com)")
+    raise RuntimeError("Please set RENDERER_URL (e.g. https://manim-renderer-service.onrender.com)")
 
 PORT = int(os.getenv("PORT", 8000))
 
@@ -43,6 +42,20 @@ app = FastAPI(
     title="Manim LLM Service",
     description="Expand user prompt → generate Manim code → delegate to renderer",
     version="1.0.0",
+)
+
+# ───── Add CORS Middleware ─────
+origins = [
+    "http://localhost:3000",  # Replace or add your frontend domain
+    "https://your-frontend.onrender.com"
+]
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=origins,     # Use ["*"] to allow all origins (dev only)
+    allow_credentials=True,
+    allow_methods=["*"],       # Important: allows POST, OPTIONS, GET, etc.
+    allow_headers=["*"],
 )
 
 
@@ -93,15 +106,13 @@ async def generate_code_and_delegate(req: GenerateRequest):
         logger.error(f"Renderer returned {response.status_code}: {detail}")
         raise HTTPException(status_code=502, detail=f"Renderer error: {detail}")
 
-    # At this point response.json() is e.g. { "videoUrl": "/media/videos/…", … }
+    # Update video URL with full host so frontend can access it
     resp_json = response.json()
-
-    # ◀── prepend the renderer’s hostname so that the front‐end can actually fetch the .mp4
     raw_path = resp_json.get("videoUrl", "")
     full_video_url = f"{RENDERER_URL}{raw_path}"
     resp_json["videoUrl"] = full_video_url
 
-    # Add expandedPrompt if <200 chars
+    # Add expanded prompt to response if short enough
     if len(detailed) < 200:
         resp_json["expandedPrompt"] = detailed
 
