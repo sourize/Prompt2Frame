@@ -3,7 +3,6 @@ import { motion } from 'framer-motion';
 import axios from 'axios';
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
-import { Badge } from "@/components/ui/badge";
 import { Card, CardContent } from "@/components/ui/card";
 import { toast } from "@/hooks/use-toast";
 import {
@@ -12,18 +11,9 @@ import {
   Play,
   Video,
   AlertCircle,
-  Paperclip,
-  Mic,
-  Camera,
-  Search,
-  Globe
 } from "lucide-react";
-import SuggestedQuestions from "./SuggestedQuestions";
 
-// 1) Define this once. This must point to your **LLM service** (Project 1) URL.
 const LLM_SERVICE_URL = 'https://manim-llm-service.onrender.com';
-
-type Quality = 'l' | 'm' | 'h';
 
 interface SearchInterfaceProps {
   loading: boolean;
@@ -34,7 +24,6 @@ const SearchInterface: React.FC<SearchInterfaceProps> = ({ loading, setLoading }
   const [prompt, setPrompt] = useState('');
   const [videoUrl, setVideoUrl] = useState('');
   const [error, setError] = useState('');
-  const [quality, setQuality] = useState<Quality>('m');
   const videoRef = useRef<HTMLVideoElement>(null);
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -62,22 +51,19 @@ const SearchInterface: React.FC<SearchInterfaceProps> = ({ loading, setLoading }
         description: "This may take a minute...",
       });
 
-      // 2) POST to /generate-code on the LLM service:
       const response = await axios.post(
         `${LLM_SERVICE_URL}/generate-code`,
         {
           prompt,
-          quality,
+          quality: 'm',    // always medium
           timeout: 300
         }
       );
 
-      // 3) The backend should return a full, publicly accessible URL in response.data.videoUrl,
-      //    e.g.: "https://manim-renderer-service.onrender.com/media/videos/abcd1234/final_animation.mp4"
+      // Backend returns a full URL, e.g.:
+      // "https://manim-renderer-service.onrender.com/media/videos/abcd1234/final_animation.mp4"
       const returnedUrl: string = response.data.videoUrl;
-
-      // 4) If you want to bust cache, append a timestamp query param:
-      const fullUrl = returnedUrl + `?t=${Date.now()}`;
+      const fullUrl = returnedUrl + `?t=${Date.now()}`; // cache-bust
 
       console.log('Video URL:', fullUrl);
       setVideoUrl(fullUrl);
@@ -118,10 +104,6 @@ const SearchInterface: React.FC<SearchInterfaceProps> = ({ loading, setLoading }
     });
   };
 
-  const handleSuggestionClick = (suggestion: string) => {
-    setPrompt(suggestion);
-  };
-
   return (
     <div className="flex flex-col items-center justify-center min-h-screen px-6">
       <div className="w-full max-w-2xl mx-auto space-y-8">
@@ -137,14 +119,14 @@ const SearchInterface: React.FC<SearchInterfaceProps> = ({ loading, setLoading }
           <p className="text-gray-400 text-lg mb-8">Turn prompts into animations</p>
         </motion.div>
 
-        {/* Centered Search Input */}
+        {/* Input Form */}
         <motion.div
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.6, delay: 0.1 }}
           className="w-full"
         >
-          <form onSubmit={handleSubmit} className="w-full space-y-4">
+          <form onSubmit={handleSubmit} className="w-full">
             <div className="relative bg-gray-800/90 rounded-xl border border-gray-700/50 backdrop-blur-sm hover:border-gray-600/50 transition-all duration-200">
               <Textarea
                 value={prompt}
@@ -203,34 +185,6 @@ const SearchInterface: React.FC<SearchInterfaceProps> = ({ loading, setLoading }
                 </Button>
               </div>
             </div>
-
-            {/* Quality Selection */}
-            <div className="flex items-center justify-center gap-4">
-              <Button
-                type="button"
-                variant={quality === 'l' ? 'default' : 'outline'}
-                onClick={() => setQuality('l')}
-                className="bg-gray-800/50 hover:bg-gray-700/50 text-white border-gray-700/50"
-              >
-                Low Quality
-              </Button>
-              <Button
-                type="button"
-                variant={quality === 'm' ? 'default' : 'outline'}
-                onClick={() => setQuality('m')}
-                className="bg-gray-800/50 hover:bg-gray-700/50 text-white border-gray-700/50"
-              >
-                Medium Quality
-              </Button>
-              <Button
-                type="button"
-                variant={quality === 'h' ? 'default' : 'outline'}
-                onClick={() => setQuality('h')}
-                className="bg-gray-800/50 hover:bg-gray-700/50 text-white border-gray-700/50"
-              >
-                High Quality
-              </Button>
-            </div>
           </form>
         </motion.div>
 
@@ -243,7 +197,7 @@ const SearchInterface: React.FC<SearchInterfaceProps> = ({ loading, setLoading }
         >
           <div
             className="flex items-center gap-2 text-gray-400 hover:text-gray-300 transition-colors cursor-pointer"
-            onClick={() => handleSuggestionClick("Draw a red circle and transform it into a square")}
+            onClick={() => setPrompt("Draw a red circle and transform it into a square")}
           >
             <ArrowRight className="w-4 h-4" />
             <Video className="w-4 h-4" />
@@ -251,7 +205,7 @@ const SearchInterface: React.FC<SearchInterfaceProps> = ({ loading, setLoading }
           </div>
           <div
             className="flex items-center gap-2 text-gray-400 hover:text-gray-300 transition-colors cursor-pointer"
-            onClick={() => handleSuggestionClick("Create a bouncing ball that changes colors")}
+            onClick={() => setPrompt("Create a bouncing ball that changes colors")}
           >
             <ArrowRight className="w-4 h-4" />
             <Video className="w-4 h-4" />
@@ -259,7 +213,7 @@ const SearchInterface: React.FC<SearchInterfaceProps> = ({ loading, setLoading }
           </div>
           <div
             className="flex items-center gap-2 text-gray-400 hover:text-gray-300 transition-colors cursor-pointer"
-            onClick={() => handleSuggestionClick("Animate a growing neural network visualization")}
+            onClick={() => setPrompt("Animate a growing neural network visualization")}
           >
             <ArrowRight className="w-4 h-4" />
             <Video className="w-4 h-4" />
@@ -267,7 +221,7 @@ const SearchInterface: React.FC<SearchInterfaceProps> = ({ loading, setLoading }
           </div>
           <div
             className="flex items-center gap-2 text-gray-400 hover:text-gray-300 transition-colors cursor-pointer"
-            onClick={() => handleSuggestionClick("Make a simple pendulum swinging motion")}
+            onClick={() => setPrompt("Make a simple pendulum swinging motion")}
           >
             <ArrowRight className="w-4 h-4" />
             <Video className="w-4 h-4" />
