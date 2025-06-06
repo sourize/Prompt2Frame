@@ -33,13 +33,13 @@ RUN apt-get update && \
     && apt-get clean
 
 # Copy requirements first to leverage Docker cache
-COPY backend/requirements.txt .
+COPY requirements.txt .
 
 # Install Python dependencies
 RUN pip install --no-cache-dir -r requirements.txt
 
 # Copy the rest of the application
-COPY backend/ .
+COPY . .
 
 # Create media directory for video storage
 RUN mkdir -p media/videos && chmod 777 media/videos
