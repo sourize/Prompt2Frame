@@ -18,16 +18,17 @@ RUN apt-get update && apt-get install -y \
     libgdk-pixbuf2.0-dev \
     libffi-dev \
     shared-mime-info \
-    && rm -rf /var/lib/apt/lists/*
+    && rm -rf /var/lib/apt/lists/* \
+    && apt-get clean
 
 # Copy requirements first to leverage Docker cache
-COPY requirements.txt .
+COPY backend/requirements.txt .
 
 # Install Python dependencies
 RUN pip install --no-cache-dir -r requirements.txt
 
 # Copy the rest of the application
-COPY . .
+COPY backend/ .
 
 # Create media directory for video storage
 RUN mkdir -p media/videos && chmod 777 media/videos
