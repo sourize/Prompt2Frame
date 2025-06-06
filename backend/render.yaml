@@ -6,11 +6,10 @@ services:
       pip install --upgrade pip
       pip install -r requirements.txt
     startCommand: |
-      cd src
-      PYTHONPATH=$PYTHONPATH:. \
+      PYTHONPATH=$PYTHONPATH:$(pwd) \
       gunicorn \
-        --config ../src/gunicorn_config.py \
-        app:app
+        --config src/gunicorn_config.py \
+        src.app:app
     envVars:
       - key: GROQ_API_KEY
         sync: false

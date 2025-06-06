@@ -14,7 +14,7 @@ from pydantic import BaseModel, Field
 
 from .prompt_expander import expand_prompt
 from .generator import generate_manim_code_with_fallback
-from backend.src.executor import render_and_concat_all, MEDIA_ROOT
+from .executor import render_and_concat_all, MEDIA_ROOT
 
 # Enhanced logging configuration
 logging.basicConfig(
