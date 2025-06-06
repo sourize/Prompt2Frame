@@ -54,24 +54,22 @@ ENV PORT=8000
 # Expose the port the app runs on
 EXPOSE ${PORT}
 
+# Create startup script
+RUN echo '#!/bin/bash\n\
+set -e\n\
+\n\
+# Wait for the application to start\n\
+echo "Starting application..."\n\
+uvicorn src.app:app --host 0.0.0.0 --port ${PORT} --workers 1 --proxy-headers --forwarded-allow-ips="*" --timeout-keep-alive 75 --log-level debug\n\
+' > /app/start.sh && \
+    chmod +x /app/start.sh
+
 # Create a non-root user
 RUN useradd -m -u 1000 appuser && \
     chown -R appuser:appuser /app
 
 # Switch to non-root user
 USER appuser
-
-# Create startup script
-COPY <<EOF /app/start.sh
-#!/bin/bash
-set -e
-
-# Wait for the application to start
-echo "Starting application..."
-uvicorn src.app:app --host 0.0.0.0 --port ${PORT} --workers 1 --proxy-headers --forwarded-allow-ips='*' --timeout-keep-alive 75 --log-level debug
-EOF
-
-RUN chmod +x /app/start.sh
 
 # Command to run the application with production settings
 CMD ["/app/start.sh"] 
