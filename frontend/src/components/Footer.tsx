@@ -3,7 +3,7 @@ import React from "react";
 type FooterProps = { loading: boolean };
 const Footer = ({ loading }: FooterProps) => {
   return (
-    <footer className="fixed bottom-0 left-0 w-full py-6 flex flex-col items-center bg-transparent z-50">
+    <footer className="fixed bottom-0 left-0 w-full py-6 flex flex-col items-center bg-black/50 backdrop-blur-sm z-50">
       {loading && (
         <div className="mb-2 flex justify-center transition-opacity duration-500 opacity-100 animate-fade-in-out">
           <svg className="animate-spin h-6 w-6 text-pink-500" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
