@@ -1,108 +1,192 @@
 # manim-renderer-service/app.py
-import os
-import time
-import logging
-from pathlib import Path
-from fastapi import FastAPI, HTTPException, status
-from fastapi.responses import JSONResponse, FileResponse
-from pydantic import BaseModel, Field
-from executor import render_and_concat_all, RenderError, MEDIA_ROOT
 
+import os
+import shutil
+import tempfile
+import uuid
+import subprocess
+import logging
+import time
+from pathlib import Path
+from typing import List
+
+from fastapi import FastAPI, HTTPException
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles    # ← Add this import
+from pydantic import BaseModel
+
+# -------- logging setup --------
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
 )
 logger = logging.getLogger("renderer_service")
 
-PORT = int(os.getenv("PORT", 8000))
+# -------- ensure MEDIA_ROOT --------
+MEDIA_ROOT = Path(os.path.abspath("media/videos"))
+MEDIA_ROOT.mkdir(parents=True, exist_ok=True)
 
+# -------- FastAPI + CORS --------
 app = FastAPI(
     title="Manim Renderer Service",
-    description="Receive Manim code, render it to video, and return a URL",
     version="1.0.0",
 )
 
-# Ensure MEDIA_ROOT exists on startup
-MEDIA_ROOT.mkdir(parents=True, exist_ok=True)
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_methods=["*"],
+    allow_headers=["*"],
+    allow_credentials=True,
+)
 
+# ← MOUNT /media/videos so that any GET /media/videos/... serves the actual *.mp4 files
+app.mount(
+    "/media/videos",
+    StaticFiles(directory=str(MEDIA_ROOT)),
+    name="media_videos",
+)
 
+# -------- request / response models --------
 class RenderRequest(BaseModel):
-    code: str = Field(..., description="Full Manim Python code (as a single string)")
-    quality: str = Field("m", pattern="^[lmh]$")
-    timeout: int = Field(300, ge=60, le=600)
-
+    code: str
+    quality: str   # "l", "m", or "h"
+    timeout: int   # in seconds
 
 class RenderResponse(BaseModel):
     videoUrl: str
-    renderTime: float
-    codeLength: int
 
+# -------- helper to run a command with timeout --------
+def run_command(cmd: List[str], timeout: int) -> None:
+    proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+    try:
+        stdout, stderr = proc.communicate(timeout=timeout)
+    except subprocess.TimeoutExpired:
+        proc.kill()
+        proc.communicate()
+        raise RuntimeError(f"Command timed out: {' '.join(cmd)}")
+    if proc.returncode != 0:
+        raise RuntimeError(f"Command failed (exit {proc.returncode}): {stderr or stdout}")
 
+# -------- helper to extract Scene subclass names --------
+import ast
+def extract_scene_names(code: str) -> List[str]:
+    try:
+        tree = ast.parse(code)
+    except SyntaxError as e:
+        raise RuntimeError(f"Invalid Python syntax: {e}")
+    scenes = []
+    for node in tree.body:
+        if isinstance(node, ast.ClassDef):
+            for base in node.bases:
+                if (isinstance(base, ast.Name) and base.id == "Scene") or (
+                    isinstance(base, ast.Attribute) and base.attr == "Scene"
+                ):
+                    scenes.append(node.name)
+    if not scenes:
+        raise RuntimeError("No Scene subclass found in code")
+    return scenes
+
+# -------- /render endpoint --------
 @app.post("/render", response_model=RenderResponse)
-async def render_code(req: RenderRequest):
-    start_time = time.time()
-    code = req.code
-    quality = req.quality
-    timeout = req.timeout
+async def render_endpoint(req: RenderRequest):
+    logger.info(f"Starting rendering (quality={req.quality}, timeout={req.timeout}s)")
 
-    logger.info(f"Starting rendering (quality={quality}, timeout={timeout}s)")
+    # 1) Validate quality
+    if req.quality not in ("l", "m", "h"):
+        raise HTTPException(status_code=400, detail="Invalid quality. Must be 'l', 'm', or 'h'.")
 
+    # 2) Extract scene names
     try:
-        # render_and_concat_all returns a Path to final_animation.mp4
-        video_path = render_and_concat_all(code, quality, timeout)
-    except RenderError as e:
-        logger.error(f"RenderError: {e}")
+        scenes = extract_scene_names(req.code)
+    except Exception as e:
+        logger.error(f"Scene extraction failed: {e}")
+        raise HTTPException(status_code=400, detail=str(e))
+
+    # 3) Create temporary working directory
+    work_dir = Path(tempfile.mkdtemp(prefix="manim_render_"))
+    try:
+        # 3a) Write code to file
+        script_path = work_dir / "animation_script.py"
+        script_path.write_text(req.code, encoding="utf-8")
+
+        # 3b) Create media subdirectory
+        media_dir = work_dir / "media"
+        media_dir.mkdir(parents=True, exist_ok=True)
+
+        # 3c) Create unique output folder under MEDIA_ROOT
+        run_id = f"{uuid.uuid4().hex}_{int(time.time())}"
+        final_dir = MEDIA_ROOT / run_id
+        final_dir.mkdir(parents=True, exist_ok=True)
+        output_file = final_dir / "final_animation.mp4"
+
+        # 4) Build Manim command
+        cmd = [
+            "manim",
+            "render",
+            str(script_path),
+            *scenes,
+            f"-q{req.quality}",
+            "--disable_caching",
+            "--media_dir", str(media_dir),
+            "--verbosity", "WARNING",
+        ]
+        if req.quality == "l":
+            cmd += ["--frame_rate", "15"]
+
+        logger.info(f"Running Manim: {' '.join(cmd)}")
+        run_command(cmd, timeout=req.timeout)
+
+        # 5) Gather all generated .mp4 files
+        video_files = list(media_dir.rglob("*.mp4"))
+        if not video_files:
+            raise RuntimeError("No .mp4 files found in Manim output")
+
+        # 6) Concatenate if multiple scenes
+        if len(video_files) == 1:
+            shutil.copy2(video_files[0], output_file)
+        else:
+            concat_txt = work_dir / "concat.txt"
+            with open(concat_txt, "w") as f:
+                for v in sorted(video_files):
+                    f.write(f"file '{v.resolve()}'\n")
+            concat_cmd = [
+                "ffmpeg",
+                "-y",
+                "-f", "concat",
+                "-safe", "0",
+                "-i", str(concat_txt),
+                "-c", "copy",
+                str(output_file),
+            ]
+            logger.info(f"Running ffmpeg: {' '.join(concat_cmd)}")
+            run_command(concat_cmd, timeout=120)
+
+        # 7) Verify final video
+        if not output_file.exists() or output_file.stat().st_size < 1024:
+            raise RuntimeError("Final video is missing or too small")
+
+        # Respond with just the relative‐URL
+        rel_path = output_file.resolve().relative_to(MEDIA_ROOT.resolve())
+        video_url = f"/media/videos/{rel_path.as_posix()}"
+        logger.info(f"Rendering done → {video_url}")
+        return RenderResponse(videoUrl=video_url)
+
+    except RuntimeError as e:
+        logger.error(f"Rendering pipeline failed: {e}")
         raise HTTPException(status_code=500, detail=str(e))
-    except Exception as e:
-        logger.error(f"Unexpected render exception: {e}")
-        raise HTTPException(status_code=500, detail="Unexpected rendering failure")
-
-    # Build public URL for the video
-    try:
-        # video_path is something like media/videos/<run_id>/final_animation.mp4
-        rel = video_path.resolve().relative_to(MEDIA_ROOT.parent.resolve())  # up one level
-        # MEDIA_ROOT.parent is the “media” directory; we want everything after that 
-        # so that /media/videos/... resolves properly
-        url = f"/media/{rel.as_posix()}"
-    except Exception as e:
-        logger.error(f"Failed to build video URL: {e}")
-        raise HTTPException(status_code=500, detail="Failed to generate video URL")
-
-    render_time = time.time() - start_time
-    logger.info(f"Rendering done in {render_time:.2f}s → {url}")
-
-    return {
-        "videoUrl": url,
-        "renderTime": render_time,
-        "codeLength": len(code),
-    }
-
-
-@app.get("/media/videos/{run_id}/{filename}")
-async def serve_video(run_id: str, filename: str):
-    """Serve the generated .mp4 files with proper headers."""
-    file_path = MEDIA_ROOT / run_id / filename
-    if not file_path.exists() or not file_path.is_file():
-        raise HTTPException(status_code=404, detail="Video not found")
-
-    file_size = file_path.stat().st_size
-    return FileResponse(
-        str(file_path),
-        media_type="video/mp4",
-        headers={
-            "Cache-Control": "public, max-age=3600",
-            "Accept-Ranges": "bytes",
-            "Content-Length": str(file_size),
-            "X-Content-Type-Options": "nosniff",
-        },
-    )
-
+    finally:
+        # 8) Cleanup temp directory
+        try:
+            shutil.rmtree(work_dir)
+        except Exception:
+            pass
 
 @app.get("/health")
-def health():
+async def health_check():
     return {"status": "ok"}
-
 
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run(app, host="0.0.0.0", port=PORT)
+    port = int(os.getenv("PORT", 10000))
+    uvicorn.run(app, host="0.0.0.0", port=port)

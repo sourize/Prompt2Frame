@@ -5,9 +5,7 @@ import time
 import logging
 import asyncio
 from typing import Optional
-from fastapi import FastAPI, HTTPException, status
-from fastapi.requests import Request
-from fastapi.responses import JSONResponse
+from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel, Field
 import httpx
 
@@ -20,10 +18,10 @@ logging.basicConfig(
 )
 logger = logging.getLogger("llm_service")
 
-# Pull in RENDERER_URL (no trailing slash)
+# ← This must be exactly your deployed renderer service (no trailing slash)
 RENDERER_URL = os.getenv("RENDERER_URL", "").rstrip("/")
 if not RENDERER_URL:
-    raise RuntimeError("Please set RENDERER_URL to Project 2’s base URL (no /render at the end)")
+    raise RuntimeError("Please set RENDERER_URL to project 2’s base URL (e.g. https://manim-renderer-service.onrender.com)")
 
 PORT = int(os.getenv("PORT", 8000))
 
@@ -54,7 +52,7 @@ async def generate_code_and_delegate(req: GenerateRequest):
     user_prompt = req.prompt.strip()
     logger.info("Received /generate-code; expanding prompt")
 
-    # 1) Expand prompt (fallback if needed)
+    # 1) Expand prompt (fallback)
     try:
         detailed = expand_prompt_with_fallback(user_prompt)
     except PromptExpansionError as e:
@@ -63,7 +61,7 @@ async def generate_code_and_delegate(req: GenerateRequest):
 
     logger.info(f"Expanded prompt (first 60 chars): {detailed[:60]}…")
 
-    # 2) Generate Manim code (fallback if needed)
+    # 2) Generate Manim code (fallback)
     try:
         code = generate_manim_code_with_fallback(detailed)
     except Exception as e:
@@ -72,7 +70,7 @@ async def generate_code_and_delegate(req: GenerateRequest):
 
     logger.info(f"Generated Manim code length: {len(code)} chars")
 
-    # 3) Send code → renderer
+    # 3) Delegate to Renderer
     payload = {
         "code": code,
         "quality": req.quality,
@@ -88,7 +86,6 @@ async def generate_code_and_delegate(req: GenerateRequest):
             raise HTTPException(status_code=502, detail="Renderer unavailable")
 
     if response.status_code != 200:
-        # If renderer’s error body isn’t JSON, response.json() will fail—catch it
         try:
             detail = response.json().get("detail", "Unknown error from renderer")
         except Exception:
@@ -96,14 +93,15 @@ async def generate_code_and_delegate(req: GenerateRequest):
         logger.error(f"Renderer returned {response.status_code}: {detail}")
         raise HTTPException(status_code=502, detail=f"Renderer error: {detail}")
 
+    # At this point response.json() is e.g. { "videoUrl": "/media/videos/…", … }
     resp_json = response.json()
-    # resp_json looks like { "videoUrl": "/media/videos/…", "…": … }
-    # We must prepend RENDERER_URL so that front end can fetch it directly:
+
+    # ◀── prepend the renderer’s hostname so that the front‐end can actually fetch the .mp4
     raw_path = resp_json.get("videoUrl", "")
     full_video_url = f"{RENDERER_URL}{raw_path}"
     resp_json["videoUrl"] = full_video_url
 
-    # Include expandedPrompt if small enough
+    # Add expandedPrompt if <200 chars
     if len(detailed) < 200:
         resp_json["expandedPrompt"] = detailed
 
