@@ -90,37 +90,66 @@ app.add_middleware(
 class EnhancedResourceGuard(BaseHTTPMiddleware):
     """Enhanced middleware for resource monitoring and rate limiting."""
     
+    def __init__(self, app):
+        super().__init__(app)
+        self.last_check = 0
+        self.cooldown = 5  # seconds between CPU checks
+        self.cpu_threshold = 95  # Increased threshold
+        self.memory_threshold = 90
+        self.max_concurrent = 2  # Reduced from 3 to 2
+    
     async def dispatch(self, request: Request, call_next):
-        # Skip health checks
-        if request.url.path in ["/health", "/metrics"]:
+        # Skip health checks and OPTIONS requests
+        if request.url.path in ["/health", "/metrics"] or request.method == "OPTIONS":
             return await call_next(request)
         
         start_time = time.time()
         
-        # Resource checks
+        # Add cooldown period for CPU checks
+        current_time = time.time()
+        if current_time - self.last_check < self.cooldown:
+            return await call_next(request)
+        self.last_check = current_time
+        
+        # Resource checks with exponential backoff
         cpu_usage = psutil.cpu_percent(interval=0.1)
         memory_usage = psutil.virtual_memory().percent
         
-        if cpu_usage > 85:
+        if cpu_usage > self.cpu_threshold:
             logger.warning(f"High CPU usage: {cpu_usage}%")
             return JSONResponse(
-                {"error": "Server overloaded - high CPU usage", "cpu_usage": cpu_usage},
-                status_code=status.HTTP_503_SERVICE_UNAVAILABLE
+                {
+                    "error": "Server overloaded - high CPU usage",
+                    "cpu_usage": cpu_usage,
+                    "retry_after": self.cooldown
+                },
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                headers={"Retry-After": str(self.cooldown)}
             )
         
-        if memory_usage > 85:
+        if memory_usage > self.memory_threshold:
             logger.warning(f"High memory usage: {memory_usage}%")
             return JSONResponse(
-                {"error": "Server overloaded - high memory usage", "memory_usage": memory_usage},
-                status_code=status.HTTP_503_SERVICE_UNAVAILABLE
+                {
+                    "error": "Server overloaded - high memory usage",
+                    "memory_usage": memory_usage,
+                    "retry_after": self.cooldown
+                },
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                headers={"Retry-After": str(self.cooldown)}
             )
         
-        # Rate limiting - max 3 concurrent requests
-        if app_state["active_requests"] >= 3:
+        # Rate limiting - max 2 concurrent requests
+        if app_state["active_requests"] >= self.max_concurrent:
             logger.warning("Too many concurrent requests")
             return JSONResponse(
-                {"error": "Too many concurrent requests", "active_requests": app_state["active_requests"]},
-                status_code=status.HTTP_429_TOO_MANY_REQUESTS
+                {
+                    "error": "Too many concurrent requests",
+                    "active_requests": app_state["active_requests"],
+                    "retry_after": self.cooldown
+                },
+                status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+                headers={"Retry-After": str(self.cooldown)}
             )
         
         app_state["active_requests"] += 1
