@@ -208,21 +208,59 @@ async def cleanup_old_files(max_age_hours: int = 24):
 
 @app.get("/health")
 async def health_check():
-    """Enhanced health check with system metrics."""
+    """Enhanced health check with system metrics and startup verification."""
     try:
-        # Check if media directory is writable
-        test_file = MEDIA_ROOT / "health_check.txt"
-        test_file.touch()
-        test_file.unlink()
+        logger.info("Health check started")
         
-        return {
+        # Check if media directory exists and is writable
+        if not MEDIA_ROOT.exists():
+            logger.error("Media directory does not exist")
+            raise HTTPException(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                detail="Media directory not found"
+            )
+            
+        if not os.access(MEDIA_ROOT, os.W_OK):
+            logger.error("Media directory is not writable")
+            raise HTTPException(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                detail="Media directory not writable"
+            )
+        
+        # Test file operations
+        test_file = MEDIA_ROOT / "health_check.txt"
+        try:
+            test_file.touch()
+            test_file.unlink()
+            logger.info("File system operations successful")
+        except Exception as e:
+            logger.error(f"File system operations failed: {e}")
+            raise HTTPException(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                detail=f"File system operations failed: {str(e)}"
+            )
+        
+        # Get system metrics
+        try:
+            cpu_percent = psutil.cpu_percent()
+            memory = psutil.virtual_memory()
+            disk = psutil.disk_usage("/")
+            logger.info(f"System metrics - CPU: {cpu_percent}%, Memory: {memory.percent}%, Disk: {disk.percent}%")
+        except Exception as e:
+            logger.error(f"Failed to get system metrics: {e}")
+            raise HTTPException(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                detail=f"Failed to get system metrics: {str(e)}"
+            )
+        
+        response = {
             "status": "healthy",
             "timestamp": time.time(),
             "uptime": time.time() - app_state["start_time"],
             "system": {
-                "cpu_percent": psutil.cpu_percent(),
-                "memory_percent": psutil.virtual_memory().percent,
-                "disk_percent": psutil.disk_usage("/").percent,
+                "cpu_percent": cpu_percent,
+                "memory_percent": memory.percent,
+                "disk_percent": disk.percent,
             },
             "app_state": {
                 "active_requests": app_state["active_requests"],
@@ -231,8 +269,14 @@ async def health_check():
                 "cache_hits": app_state["cache_hits"]
             }
         }
+        
+        logger.info("Health check completed successfully")
+        return response
+        
+    except HTTPException:
+        raise
     except Exception as e:
-        logger.error(f"Health check failed: {e}")
+        logger.error(f"Health check failed with unexpected error: {e}")
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail=f"Health check failed: {str(e)}"

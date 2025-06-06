@@ -61,5 +61,17 @@ RUN useradd -m -u 1000 appuser && \
 # Switch to non-root user
 USER appuser
 
+# Create startup script
+COPY <<EOF /app/start.sh
+#!/bin/bash
+set -e
+
+# Wait for the application to start
+echo "Starting application..."
+uvicorn src.app:app --host 0.0.0.0 --port ${PORT} --workers 1 --proxy-headers --forwarded-allow-ips='*' --timeout-keep-alive 75 --log-level debug
+EOF
+
+RUN chmod +x /app/start.sh
+
 # Command to run the application with production settings
-CMD uvicorn src.app:app --host 0.0.0.0 --port ${PORT} --workers 1 --proxy-headers --forwarded-allow-ips='*' --timeout-keep-alive 75 
+CMD ["/app/start.sh"] 
