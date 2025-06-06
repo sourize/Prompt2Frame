@@ -76,12 +76,12 @@ EXPOSE 8000
 # ────────────────────────────────────────────────────────────────────────────
 # 12) CMD: use shell form so $PORT expands at runtime
 # ────────────────────────────────────────────────────────────────────────────
-CMD ["sh", "-c", \
-     "uvicorn src.app:app \
-       --host 0.0.0.0 \
-       --port ${PORT:-8000} \
-       --workers 1 \
-       --proxy-headers \
-       --forwarded-allow-ips='*' \
-       --timeout-keep-alive 75 \
-       --log-level info"]
+CMD ["sh", "-c", "uvicorn src.app:app \
+  --host 0.0.0.0 \
+  --port ${PORT:-8000} \
+  --workers 1 \
+  --proxy-headers \
+  --forwarded-allow-ips='*' \
+  --timeout-keep-alive 75 \
+  --log-level info"]
+
