@@ -6,17 +6,40 @@ import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent } from "@/components/ui/card";
 import { toast } from "@/hooks/use-toast";
-import { ArrowRight, Download, Play, Video, AlertCircle, Paperclip, Mic, Camera, Search, Globe } from "lucide-react";
+import {
+  ArrowRight,
+  Download,
+  Play,
+  Video,
+  AlertCircle,
+  Paperclip,
+  Mic,
+  Camera,
+  Search,
+  Globe
+} from "lucide-react";
 import SuggestedQuestions from "./SuggestedQuestions";
 
-const SearchInterface = ({ loading, setLoading }: { loading: boolean; setLoading: (val: boolean) => void }) => {
+// 1) Define this once. This must point to your **LLM service** (Project 1) URL.
+const LLM_SERVICE_URL = 'https://manim-llm-service.onrender.com';
+
+type Quality = 'l' | 'm' | 'h';
+
+interface SearchInterfaceProps {
+  loading: boolean;
+  setLoading: (val: boolean) => void;
+}
+
+const SearchInterface: React.FC<SearchInterfaceProps> = ({ loading, setLoading }) => {
   const [prompt, setPrompt] = useState('');
   const [videoUrl, setVideoUrl] = useState('');
   const [error, setError] = useState('');
+  const [quality, setQuality] = useState<Quality>('m');
   const videoRef = useRef<HTMLVideoElement>(null);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+
     if (!prompt.trim()) {
       toast({
         title: "Empty prompt",
@@ -25,22 +48,40 @@ const SearchInterface = ({ loading, setLoading }: { loading: boolean; setLoading
       });
       return;
     }
+
     setLoading(true);
     setError('');
     setVideoUrl('');
     if (videoRef.current) {
       videoRef.current.load();
     }
+
     try {
       toast({
         title: "Generating animation",
         description: "This may take a minute...",
       });
-      const response = await axios.post('https://anime2d.onrender.com/generate', { prompt });
-      const videoPath = response.data.videoUrl;
-      const fullUrl = `https://anime2d.onrender.com${videoPath}?t=${Date.now()}`;
+
+      // 2) POST to /generate-code on the LLM service:
+      const response = await axios.post(
+        `${LLM_SERVICE_URL}/generate-code`,
+        {
+          prompt,
+          quality,
+          timeout: 300
+        }
+      );
+
+      // 3) The backend should return a full, publicly accessible URL in response.data.videoUrl,
+      //    e.g.: "https://manim-renderer-service.onrender.com/media/videos/abcd1234/final_animation.mp4"
+      const returnedUrl: string = response.data.videoUrl;
+
+      // 4) If you want to bust cache, append a timestamp query param:
+      const fullUrl = returnedUrl + `?t=${Date.now()}`;
+
       console.log('Video URL:', fullUrl);
       setVideoUrl(fullUrl);
+
       toast({
         title: "Success!",
         description: "Your animation has been generated successfully.",
@@ -64,18 +105,17 @@ const SearchInterface = ({ loading, setLoading }: { loading: boolean; setLoading
   };
   
   const handleDownload = () => {
-    if (videoUrl) {
-      const link = document.createElement('a');
-      link.href = videoUrl;
-      link.download = `prompt2frame-${Date.now()}.mp4`;
-      document.body.appendChild(link);
-      link.click();
-      document.body.removeChild(link);
-      toast({
-        title: "Download started",
-        description: "Your animation is being downloaded.",
-      });
-    }
+    if (!videoUrl) return;
+    const link = document.createElement('a');
+    link.href = videoUrl;
+    link.download = `prompt2frame-${Date.now()}.mp4`;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    toast({
+      title: "Download started",
+      description: "Your animation is being downloaded.",
+    });
   };
 
   const handleSuggestionClick = (suggestion: string) => {
@@ -104,7 +144,7 @@ const SearchInterface = ({ loading, setLoading }: { loading: boolean; setLoading
           transition={{ duration: 0.6, delay: 0.1 }}
           className="w-full"
         >
-          <form onSubmit={handleSubmit} className="w-full">
+          <form onSubmit={handleSubmit} className="w-full space-y-4">
             <div className="relative bg-gray-800/90 rounded-xl border border-gray-700/50 backdrop-blur-sm hover:border-gray-600/50 transition-all duration-200">
               <Textarea
                 value={prompt}
@@ -123,7 +163,6 @@ const SearchInterface = ({ loading, setLoading }: { loading: boolean; setLoading
                   target.style.height = '60px';
                   const newHeight = Math.min(target.scrollHeight, 200);
                   target.style.height = `${newHeight}px`;
-                  // Ensure cursor is visible
                   if (target.selectionStart === target.value.length) {
                     target.scrollTop = target.scrollHeight;
                   }
@@ -138,9 +177,25 @@ const SearchInterface = ({ loading, setLoading }: { loading: boolean; setLoading
                   className="h-8 w-8 p-0 bg-gray-600/80 text-white hover:bg-gray-500/80 rounded-lg disabled:opacity-50 disabled:cursor-not-allowed"
                 >
                   {loading ? (
-                    <svg className="animate-spin h-4 w-4" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                    <svg
+                      className="animate-spin h-4 w-4"
+                      xmlns="http://www.w3.org/2000/svg"
+                      fill="none"
+                      viewBox="0 0 24 24"
+                    >
+                      <circle
+                        className="opacity-25"
+                        cx="12"
+                        cy="12"
+                        r="10"
+                        stroke="currentColor"
+                        strokeWidth="4"
+                      ></circle>
+                      <path
+                        className="opacity-75"
+                        fill="currentColor"
+                        d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
+                      ></path>
                     </svg>
                   ) : (
                     <ArrowRight className="h-4 w-4" />
@@ -148,17 +203,45 @@ const SearchInterface = ({ loading, setLoading }: { loading: boolean; setLoading
                 </Button>
               </div>
             </div>
+
+            {/* Quality Selection */}
+            <div className="flex items-center justify-center gap-4">
+              <Button
+                type="button"
+                variant={quality === 'l' ? 'default' : 'outline'}
+                onClick={() => setQuality('l')}
+                className="bg-gray-800/50 hover:bg-gray-700/50 text-white border-gray-700/50"
+              >
+                Low Quality
+              </Button>
+              <Button
+                type="button"
+                variant={quality === 'm' ? 'default' : 'outline'}
+                onClick={() => setQuality('m')}
+                className="bg-gray-800/50 hover:bg-gray-700/50 text-white border-gray-700/50"
+              >
+                Medium Quality
+              </Button>
+              <Button
+                type="button"
+                variant={quality === 'h' ? 'default' : 'outline'}
+                onClick={() => setQuality('h')}
+                className="bg-gray-800/50 hover:bg-gray-700/50 text-white border-gray-700/50"
+              >
+                High Quality
+              </Button>
+            </div>
           </form>
         </motion.div>
 
-        {/* Suggested Questions with animation examples */}
+        {/* Suggested Questions */}
         <motion.div
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.6, delay: 0.2 }}
           className="w-full space-y-3"
         >
-          <div 
+          <div
             className="flex items-center gap-2 text-gray-400 hover:text-gray-300 transition-colors cursor-pointer"
             onClick={() => handleSuggestionClick("Draw a red circle and transform it into a square")}
           >
@@ -166,7 +249,7 @@ const SearchInterface = ({ loading, setLoading }: { loading: boolean; setLoading
             <Video className="w-4 h-4" />
             <span className="text-sm">Draw a red circle and transform it into a square</span>
           </div>
-          <div 
+          <div
             className="flex items-center gap-2 text-gray-400 hover:text-gray-300 transition-colors cursor-pointer"
             onClick={() => handleSuggestionClick("Create a bouncing ball that changes colors")}
           >
@@ -174,7 +257,7 @@ const SearchInterface = ({ loading, setLoading }: { loading: boolean; setLoading
             <Video className="w-4 h-4" />
             <span className="text-sm">Create a bouncing ball that changes colors</span>
           </div>
-          <div 
+          <div
             className="flex items-center gap-2 text-gray-400 hover:text-gray-300 transition-colors cursor-pointer"
             onClick={() => handleSuggestionClick("Animate a growing neural network visualization")}
           >
@@ -182,7 +265,7 @@ const SearchInterface = ({ loading, setLoading }: { loading: boolean; setLoading
             <Video className="w-4 h-4" />
             <span className="text-sm">Animate a growing neural network visualization</span>
           </div>
-          <div 
+          <div
             className="flex items-center gap-2 text-gray-400 hover:text-gray-300 transition-colors cursor-pointer"
             onClick={() => handleSuggestionClick("Make a simple pendulum swinging motion")}
           >
@@ -192,7 +275,7 @@ const SearchInterface = ({ loading, setLoading }: { loading: boolean; setLoading
           </div>
         </motion.div>
 
-        {/* Video Output Section - Only show when there's content */}
+        {/* Video Output Section */}
         {(videoUrl || error || loading) && (
           <motion.div
             initial={{ opacity: 0, y: 20 }}
