@@ -1,88 +1,348 @@
 import time
 import psutil
 import logging
-from fastapi import FastAPI, HTTPException, Request, status
-from fastapi.responses import JSONResponse, FileResponse
+import asyncio
+from contextlib import asynccontextmanager
+from typing import Dict, Any, Optional
+from pathlib import Path
+
+from fastapi import FastAPI, HTTPException, Request, status, BackgroundTasks
+from fastapi.responses import JSONResponse, FileResponse, StreamingResponse
 from fastapi.middleware.cors import CORSMiddleware
 from starlette.middleware.base import BaseHTTPMiddleware
+from pydantic import BaseModel, Field
 
 from .prompt_expander import expand_prompt
-from .generator        import generate_manim_code
-from .executor         import render_and_concat_all, MEDIA_ROOT
+from .generator import generate_manim_code_with_fallback
+from .executor import render_and_concat_all, MEDIA_ROOT
 
-logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
-logger = logging.getLogger("uvicorn")
+# Enhanced logging configuration
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
+    handlers=[
+        logging.FileHandler("app.log"),
+        logging.StreamHandler()
+    ]
+)
+logger = logging.getLogger("manim_app")
 
-app = FastAPI()
+# Request/Response models
+class GenerateRequest(BaseModel):
+    prompt: str = Field(..., min_length=1, max_length=500, description="Animation prompt")
+    quality: str = Field("m", regex="^[lmh]$", description="Render quality: l/m/h")
+    timeout: int = Field(300, ge=60, le=600, description="Timeout in seconds")
+
+class GenerateResponse(BaseModel):
+    videoUrl: str
+    renderTime: float
+    codeLength: int
+    expandedPrompt: Optional[str] = None
+
+# Global state for monitoring
+app_state = {
+    "active_requests": 0,
+    "total_requests": 0,
+    "failed_requests": 0,
+    "cache_hits": 0
+}
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    """Application lifespan manager."""
+    logger.info("Starting Manim Animation Service")
+    
+    # Ensure media directory exists
+    MEDIA_ROOT.mkdir(parents=True, exist_ok=True)
+    
+    # Clean up old files on startup
+    await cleanup_old_files()
+    
+    yield
+    
+    logger.info("Shutting down Manim Animation Service")
+
+app = FastAPI(
+    title="Manim Animation Generator",
+    description="Generate Manim animations from text prompts",
+    version="2.0.0",
+    lifespan=lifespan
+)
+
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
-    allow_methods=["GET","POST","OPTIONS"],
+    allow_methods=["GET", "POST", "OPTIONS"],
     allow_headers=["*"],
+    allow_credentials=True,
 )
 
-class ResourceGuard(BaseHTTPMiddleware):
+class EnhancedResourceGuard(BaseHTTPMiddleware):
+    """Enhanced middleware for resource monitoring and rate limiting."""
+    
     async def dispatch(self, request: Request, call_next):
-        if request.url.path == "/health":
+        # Skip health checks
+        if request.url.path in ["/health", "/metrics"]:
             return await call_next(request)
-        if psutil.cpu_percent() > 90 or psutil.virtual_memory().percent > 90:
-            return JSONResponse({"error":"Server overloaded"}, status.HTTP_503_SERVICE_UNAVAILABLE)
-        start = time.time()
-        resp = await call_next(request)
-        if time.time() - start > 300:
-            return JSONResponse({"error":"Request timed out"}, status.HTTP_408_REQUEST_TIMEOUT)
-        return resp
+        
+        start_time = time.time()
+        
+        # Resource checks
+        cpu_usage = psutil.cpu_percent(interval=0.1)
+        memory_usage = psutil.virtual_memory().percent
+        
+        if cpu_usage > 85:
+            logger.warning(f"High CPU usage: {cpu_usage}%")
+            return JSONResponse(
+                {"error": "Server overloaded - high CPU usage", "cpu_usage": cpu_usage},
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE
+            )
+        
+        if memory_usage > 85:
+            logger.warning(f"High memory usage: {memory_usage}%")
+            return JSONResponse(
+                {"error": "Server overloaded - high memory usage", "memory_usage": memory_usage},
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE
+            )
+        
+        # Rate limiting - max 3 concurrent requests
+        if app_state["active_requests"] >= 3:
+            logger.warning("Too many concurrent requests")
+            return JSONResponse(
+                {"error": "Too many concurrent requests", "active_requests": app_state["active_requests"]},
+                status_code=status.HTTP_429_TOO_MANY_REQUESTS
+            )
+        
+        app_state["active_requests"] += 1
+        app_state["total_requests"] += 1
+        
+        try:
+            response = await call_next(request)
+            
+            # Check for timeout
+            elapsed = time.time() - start_time
+            if elapsed > 300:
+                logger.error(f"Request timeout: {elapsed:.2f}s")
+                return JSONResponse(
+                    {"error": "Request timed out", "elapsed_time": elapsed},
+                    status_code=status.HTTP_408_REQUEST_TIMEOUT
+                )
+            
+            # Add performance headers
+            response.headers["X-Response-Time"] = f"{elapsed:.3f}s"
+            response.headers["X-CPU-Usage"] = f"{cpu_usage:.1f}%"
+            response.headers["X-Memory-Usage"] = f"{memory_usage:.1f}%"
+            
+            return response
+            
+        except Exception as e:
+            app_state["failed_requests"] += 1
+            logger.error(f"Request failed: {str(e)}")
+            raise
+        finally:
+            app_state["active_requests"] -= 1
 
-app.add_middleware(ResourceGuard)
+app.add_middleware(EnhancedResourceGuard)
+
+async def cleanup_old_files(max_age_hours: int = 24):
+    """Clean up old video files to prevent disk space issues."""
+    try:
+        cutoff_time = time.time() - (max_age_hours * 3600)
+        deleted_count = 0
+        
+        for file_path in MEDIA_ROOT.rglob("*.mp4"):
+            if file_path.stat().st_mtime < cutoff_time:
+                try:
+                    file_path.unlink()
+                    deleted_count += 1
+                except OSError:
+                    pass
+        
+        logger.info(f"Cleaned up {deleted_count} old video files")
+    except Exception as e:
+        logger.error(f"File cleanup failed: {e}")
 
 @app.get("/health")
-async def health():
-    return {"status":"ok"}
+async def health_check():
+    """Enhanced health check with system metrics."""
+    return {
+        "status": "healthy",
+        "timestamp": time.time(),
+        "system": {
+            "cpu_percent": psutil.cpu_percent(),
+            "memory_percent": psutil.virtual_memory().percent,
+            "disk_percent": psutil.disk_usage("/").percent,
+        },
+        "app_state": app_state.copy()
+    }
 
-@app.post("/generate")
-async def generate(request: Request):
-    data = await request.json()
-    prompt = data.get("prompt", "").strip()
-    if not prompt:
-        raise HTTPException(status.HTTP_400_BAD_REQUEST, "Prompt is required")
+@app.get("/metrics")
+async def get_metrics():
+    """Get application metrics."""
+    return {
+        "requests": app_state.copy(),
+        "system": {
+            "cpu_percent": psutil.cpu_percent(),
+            "memory_percent": psutil.virtual_memory().percent,
+            "disk_usage": psutil.disk_usage("/").percent,
+            "load_average": psutil.getloadavg() if hasattr(psutil, 'getloadavg') else None,
+        }
+    }
 
-    # 1) Expand the short user prompt to one detailed paragraph
+@app.post("/generate", response_model=GenerateResponse)
+async def generate_animation(
+    request: GenerateRequest,
+    background_tasks: BackgroundTasks
+):
+    """Generate Manim animation from prompt with enhanced error handling."""
+    start_time = time.time()
+    
+    logger.info(f"Starting generation for prompt: {request.prompt[:100]}...")
+    
     try:
-        logger.info("Starting prompt expansion")
-        detailed = expand_prompt(prompt)
-        logger.info("Prompt expansion successful")
-    except Exception as e:
-        logger.error("Prompt expansion failed: %s", str(e))
-        raise HTTPException(500, f"Prompt expansion failed: {e}")
+        # 1) Expand the prompt
+        logger.info("Expanding prompt...")
+        try:
+            detailed_prompt = await asyncio.wait_for(
+                asyncio.create_task(asyncio.to_thread(expand_prompt, request.prompt)),
+                timeout=30
+            )
+            logger.info("Prompt expansion completed")
+        except asyncio.TimeoutError:
+            raise HTTPException(
+                status_code=status.HTTP_408_REQUEST_TIMEOUT,
+                detail="Prompt expansion timed out"
+            )
+        except Exception as e:
+            logger.error(f"Prompt expansion failed: {e}")
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail=f"Prompt expansion failed: {str(e)}"
+            )
 
-    # 2) Generate a single Manim script
-    try:
-        logger.info("Starting code generation")
-        code = generate_manim_code(detailed)
-        logger.info("Code generation successful")
-    except Exception as e:
-        logger.error("Code generation failed: %s", str(e))
-        raise HTTPException(500, f"Code generation failed: {e}")
+        # 2) Generate Manim code
+        logger.info("Generating Manim code...")
+        try:
+            code = await asyncio.wait_for(
+                asyncio.create_task(asyncio.to_thread(generate_manim_code_with_fallback, detailed_prompt)),
+                timeout=60
+            )
+            logger.info(f"Code generation completed ({len(code)} characters)")
+        except asyncio.TimeoutError:
+            raise HTTPException(
+                status_code=status.HTTP_408_REQUEST_TIMEOUT,
+                detail="Code generation timed out"
+            )
+        except Exception as e:
+            logger.error(f"Code generation failed: {e}")
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail=f"Code generation failed: {str(e)}"
+            )
 
-    # 3) Render all scenes and concat
-    try:
-        logger.info("Starting rendering pipeline")
-        video_path = render_and_concat_all(code)
-        logger.info("Rendering pipeline successful, video at: %s", str(video_path))
-    except Exception as e:
-        logger.error("Generation pipeline error: %s", str(e))
-        raise HTTPException(500, f"Rendering pipeline error: {e}")
+        # 3) Render video
+        logger.info("Starting video rendering...")
+        try:
+            video_path = await asyncio.wait_for(
+                asyncio.create_task(asyncio.to_thread(render_and_concat_all, code, request.quality, request.timeout)),
+                timeout=request.timeout + 30
+            )
+            logger.info(f"Video rendering completed: {video_path}")
+        except asyncio.TimeoutError:
+            raise HTTPException(
+                status_code=status.HTTP_408_REQUEST_TIMEOUT,
+                detail="Video rendering timed out"
+            )
+        except Exception as e:
+            logger.error(f"Video rendering failed: {e}")
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail=f"Video rendering failed: {str(e)}"
+            )
 
-    rel = video_path.resolve().relative_to(MEDIA_ROOT.resolve())
-    return {"videoUrl": f"/media/videos/{rel.as_posix()}"}
+        # Calculate relative path for serving
+        try:
+            relative_path = video_path.resolve().relative_to(MEDIA_ROOT.resolve())
+            video_url = f"/media/videos/{relative_path.as_posix()}"
+        except ValueError:
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail="Failed to generate video URL"
+            )
+
+        # Schedule cleanup of temporary files
+        background_tasks.add_task(cleanup_old_files)
+
+        render_time = time.time() - start_time
+        logger.info(f"Generation completed successfully in {render_time:.2f}s")
+
+        return GenerateResponse(
+            videoUrl=video_url,
+            renderTime=render_time,
+            codeLength=len(code),
+            expandedPrompt=detailed_prompt if len(detailed_prompt) < 200 else None
+        )
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Unexpected error in generation pipeline: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Unexpected error: {str(e)}"
+        )
 
 @app.get("/media/videos/{path:path}")
-async def serve(path: str):
-    file = MEDIA_ROOT / path
-    if not file.exists():
-        raise HTTPException(status.HTTP_404_NOT_FOUND, "Video not found")
-    return FileResponse(str(file), headers={
-        "Cache-Control":"no-store, max-age=0",
-        "Pragma":"no-cache",
-        "Expires":"0"
-    })
+async def serve_video(path: str):
+    """Serve generated video files with proper headers."""
+    file_path = MEDIA_ROOT / path
+    
+    if not file_path.exists():
+        logger.warning(f"Video file not found: {file_path}")
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Video file not found"
+        )
+    
+    if not file_path.is_file():
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Invalid file path"
+        )
+    
+    # Get file size for range requests
+    file_size = file_path.stat().st_size
+    
+    return FileResponse(
+        str(file_path),
+        media_type="video/mp4",
+        headers={
+            "Cache-Control": "public, max-age=3600",
+            "Accept-Ranges": "bytes",
+            "Content-Length": str(file_size),
+            "X-Content-Type-Options": "nosniff"
+        }
+    )
+
+# Error handlers
+@app.exception_handler(HTTPException)
+async def http_exception_handler(request: Request, exc: HTTPException):
+    """Custom HTTP exception handler with logging."""
+    logger.warning(f"HTTP {exc.status_code}: {exc.detail} - {request.url}")
+    return JSONResponse(
+        status_code=exc.status_code,
+        content={"error": exc.detail, "status_code": exc.status_code}
+    )
+
+@app.exception_handler(Exception)
+async def general_exception_handler(request: Request, exc: Exception):
+    """Handle unexpected exceptions."""
+    logger.error(f"Unhandled exception: {str(exc)} - {request.url}")
+    return JSONResponse(
+        status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+        content={"error": "Internal server error", "status_code": 500}
+    )
+
+if __name__ == "__main__":
+    import uvicorn
+    uvicorn.run(app, host="0.0.0.0", port=8000, log_level="info")
