@@ -23,14 +23,9 @@ from .executor import render_and_concat_all, MEDIA_ROOT
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
-    handlers=[logging.StreamHandler()]  # Railway/Render prefers stdout logging
+    handlers=[logging.StreamHandler()]
 )
 logger = logging.getLogger("manim_app")
-
-# ------------------------------------------------------------
-# Get port from environment variable (Railway/Render requirement)
-# ------------------------------------------------------------
-PORT = int(os.getenv("PORT", 8000))
 
 # ------------------------------------------------------------
 # Request/Response models
@@ -81,7 +76,7 @@ app = FastAPI(
 )
 
 # ------------------------------------------------------------
-# Configure CORS for Railway/Render
+# Configure CORS
 # ------------------------------------------------------------
 app.add_middleware(
     CORSMiddleware,
@@ -214,7 +209,6 @@ async def cleanup_old_files(max_age_hours: int = 24):
 # ------------------------------------------------------------
 @app.get("/health")
 async def health_check():
-    """Lightweight health check for readiness."""
     return {"status": "ok"}
 
 # ------------------------------------------------------------
@@ -222,7 +216,6 @@ async def health_check():
 # ------------------------------------------------------------
 @app.get("/metrics")
 async def get_metrics():
-    """Get application and system metrics."""
     return {
         "requests": app_state.copy(),
         "system": {
@@ -241,7 +234,6 @@ async def generate_animation(
     request: GenerateRequest,
     background_tasks: BackgroundTasks
 ):
-    """Generate Manim animation from text prompt."""
     start_time = time.time()
     logger.info(f"Starting generation for prompt: {request.prompt[:100]}...")
 
@@ -343,7 +335,6 @@ async def generate_animation(
 # ------------------------------------------------------------
 @app.get("/media/videos/{path:path}")
 async def serve_video(path: str):
-    """Serve generated video files with proper headers."""
     file_path = MEDIA_ROOT / path
 
     if not file_path.exists():
@@ -392,16 +383,5 @@ async def general_exception_handler(request: Request, exc: Exception):
     )
 
 # ------------------------------------------------------------
-# Uvicorn entry point
+# (No uvicorn.run here; start via external script/CMD)
 # ------------------------------------------------------------
-if __name__ == "__main__":
-    import uvicorn
-
-    uvicorn.run(
-        app,
-        host="0.0.0.0",
-        port=PORT,
-        workers=1,              # Reduced to 1 for smaller/limited containers
-        proxy_headers=True,
-        forwarded_allow_ips="*"
-    )
