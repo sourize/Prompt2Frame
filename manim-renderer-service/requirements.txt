@@ -1,7 +1,7 @@
 fastapi
 uvicorn[standard]
 pydantic
-python‐dotenv
+python-dotenv
 psutil
 manim         # must match v0.17.3+ 
 ffmpeg        # Render’s free Docker image should already have ffmpeg; if not, you might bundle a static ffmpeg binary
