@@ -51,6 +51,24 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+@app.on_event("startup")
+async def startup_event():
+    # wait up to 15s for the renderer to be healthy
+    async with httpx.AsyncClient() as client:
+        for attempt in range(15):
+            try:
+                r = await client.get(f"{RENDERER_URL}/health")
+                if r.status_code == 200:
+                    break
+            except httpx.RequestError:
+                pass
+            await asyncio.sleep(1)
+        else:
+            raise HTTPException(
+                status_code=502,
+                detail="Renderer never became healthy"
+            )
+
 @app.post("/generate-code", response_model=GenerateResponse)
 async def generate_code_and_delegate(req: GenerateRequest):
     start = time.time()
