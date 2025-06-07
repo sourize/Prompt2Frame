@@ -186,34 +186,59 @@ const SearchInterface = ({ loading, setLoading }: { loading: boolean; setLoading
           className="w-full space-y-3"
         >
           <div 
-            className="flex items-center gap-2 text-gray-400 hover:text-gray-300 transition-colors cursor-pointer"
-            onClick={() => handleSuggestionClick("Draw a red circle and transform it into a square")}
+            className="flex items-center gap-2 text-gray-400 hover:text-gray-300 transition-colors cursor-pointer group"
+            onClick={() => {
+              setPrompt("Draw a red circle and transform it into a square");
+              // Focus the textarea after setting the prompt
+              const textarea = document.querySelector('textarea');
+              if (textarea) {
+                textarea.focus();
+              }
+            }}
           >
-            <ArrowRight className="w-4 h-4" />
+            <ArrowRight className="w-4 h-4 group-hover:translate-x-1 transition-transform" />
             <Video className="w-4 h-4" />
             <span className="text-sm">Draw a red circle and transform it into a square</span>
           </div>
           <div 
-            className="flex items-center gap-2 text-gray-400 hover:text-gray-300 transition-colors cursor-pointer"
-            onClick={() => handleSuggestionClick("Create a bouncing ball that changes colors")}
+            className="flex items-center gap-2 text-gray-400 hover:text-gray-300 transition-colors cursor-pointer group"
+            onClick={() => {
+              setPrompt("Create a bouncing ball that changes colors");
+              const textarea = document.querySelector('textarea');
+              if (textarea) {
+                textarea.focus();
+              }
+            }}
           >
-            <ArrowRight className="w-4 h-4" />
+            <ArrowRight className="w-4 h-4 group-hover:translate-x-1 transition-transform" />
             <Video className="w-4 h-4" />
             <span className="text-sm">Create a bouncing ball that changes colors</span>
           </div>
           <div 
-            className="flex items-center gap-2 text-gray-400 hover:text-gray-300 transition-colors cursor-pointer"
-            onClick={() => handleSuggestionClick("Animate a growing neural network visualization")}
+            className="flex items-center gap-2 text-gray-400 hover:text-gray-300 transition-colors cursor-pointer group"
+            onClick={() => {
+              setPrompt("Animate a growing neural network visualization");
+              const textarea = document.querySelector('textarea');
+              if (textarea) {
+                textarea.focus();
+              }
+            }}
           >
-            <ArrowRight className="w-4 h-4" />
+            <ArrowRight className="w-4 h-4 group-hover:translate-x-1 transition-transform" />
             <Video className="w-4 h-4" />
             <span className="text-sm">Animate a growing neural network visualization</span>
           </div>
           <div 
-            className="flex items-center gap-2 text-gray-400 hover:text-gray-300 transition-colors cursor-pointer"
-            onClick={() => handleSuggestionClick("Make a simple pendulum swinging motion")}
+            className="flex items-center gap-2 text-gray-400 hover:text-gray-300 transition-colors cursor-pointer group"
+            onClick={() => {
+              setPrompt("Make a simple pendulum swinging motion");
+              const textarea = document.querySelector('textarea');
+              if (textarea) {
+                textarea.focus();
+              }
+            }}
           >
-            <ArrowRight className="w-4 h-4" />
+            <ArrowRight className="w-4 h-4 group-hover:translate-x-1 transition-transform" />
             <Video className="w-4 h-4" />
             <span className="text-sm">Make a simple pendulum swinging motion</span>
           </div>

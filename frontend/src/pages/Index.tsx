@@ -22,10 +22,10 @@ const Index = ({ loading, setLoading }: { loading: boolean; setLoading: (val: bo
         <SearchInterface loading={loading} setLoading={setLoading} />
       </div>
 
-      {/* Premium Footer */}
+      {/* Footer */}
       <footer className="relative z-10 mt-auto border-t border-gray-800/50 bg-black/50 backdrop-blur-sm">
-        <div className="max-w-7xl mx-auto px-4 py-8">
-          <div className="flex flex-col items-center justify-between gap-6 md:flex-row">
+        <div className="max-w-7xl mx-auto px-4 py-6">
+          <div className="flex flex-col items-center justify-between gap-4 md:flex-row">
             <div className="flex items-center gap-2">
               <span className="text-2xl">❤️</span>
               <div className="flex flex-col">
