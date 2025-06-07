@@ -7,6 +7,8 @@ import uuid
 import subprocess
 import logging
 import time
+import asyncio
+import httpx
 from pathlib import Path
 from typing import List
 
@@ -31,6 +33,18 @@ app = FastAPI(
     title="Manim Renderer Service",
     version="1.0.0",
 )
+
+@app.on_event("startup")
+async def keep_awake():
+    async def ping_loop():
+        async with httpx.AsyncClient() as client:
+            while True:
+                try:
+                    await client.get("http://localhost:8000/health")
+                except:
+                    pass
+                await asyncio.sleep(60)   # ping every minute
+    asyncio.create_task(ping_loop())
 
 app.add_middleware(
     CORSMiddleware,

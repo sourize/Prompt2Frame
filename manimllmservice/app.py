@@ -53,7 +53,18 @@ app.add_middleware(
 
 @app.on_event("startup")
 async def startup_event():
-    # wait up to 15s for the renderer to be healthy
+    # Start the keep-awake ping loop
+    async def ping_loop():
+        async with httpx.AsyncClient() as client:
+            while True:
+                try:
+                    await client.get("http://localhost:8000/health")
+                except:
+                    pass
+                await asyncio.sleep(60)   # ping every minute
+    asyncio.create_task(ping_loop())
+
+    # Wait for renderer to be healthy
     async with httpx.AsyncClient() as client:
         for attempt in range(15):
             try:
