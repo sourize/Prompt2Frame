@@ -3,6 +3,7 @@
 import os
 import time
 import logging
+import asyncio
 from typing import Optional
 
 from fastapi import FastAPI, HTTPException
@@ -23,11 +24,14 @@ logger = logging.getLogger("llm_service")
 RENDERER_URL = os.getenv("RENDERER_URL", "").rstrip("/")
 if not RENDERER_URL:
     raise RuntimeError(
-        "Please set RENDERER_URL to project 2’s base URL "
+        "Please set RENDERER_URL to project 2's base URL "
         "(e.g. https://manim-renderer-service.onrender.com)"
     )
 
 PORT = int(os.getenv("PORT", 8000))
+
+MAX_RENDERER_RETRIES = 3
+BACKOFF_FACTORS = [1, 2, 4]  # seconds
 
 
 class GenerateRequest(BaseModel):
@@ -88,45 +92,50 @@ async def generate_code_and_delegate(req: GenerateRequest):
     code_len = len(code)
     logger.info(f"Generated Manim code length: {code_len} chars")
 
-    # 3) Delegate to Renderer
-    payload = {
-        "code": code,
-        "quality": req.quality,
-        "timeout": req.timeout,
-    }
-    renderer_endpoint = f"{RENDERER_URL}/render"
+    # 3) Delegate to Renderer with retries
+    payload = {"code": code, "quality": req.quality, "timeout": req.timeout}
+    endpoint = f"{RENDERER_URL}/render"
 
-    # Measure rendering time separately
-    render_start = time.time()
-    async with httpx.AsyncClient(timeout=req.timeout + 30) as client:
+    last_exc = None
+    for attempt in range(1, MAX_RENDERER_RETRIES + 1):
         try:
-            response = await client.post(renderer_endpoint, json=payload)
+            async with httpx.AsyncClient(timeout=req.timeout + 30) as client:
+                resp = await client.post(endpoint, json=payload)
         except httpx.RequestError as e:
-            logger.error(f"Failed to contact renderer: {e}")
-            raise HTTPException(status_code=502, detail="Renderer unavailable")
-
-    render_elapsed = time.time() - render_start
-
-    if response.status_code != 200:
-        raw_body = response.text
-        logger.error(f"Renderer returned {response.status_code} with body:\n{raw_body}")
-        try:
-            detail = response.json().get("detail", "Unknown error from renderer")
-        except Exception:
-            detail = f"Non-JSON error from renderer: {raw_body[:200]!r}"
-        raise HTTPException(status_code=502, detail=f"Renderer error: {detail}")
+            last_exc = e
+            logger.warning(f"[Renderer] RequestError on attempt {attempt}: {e}")
+        else:
+            if 200 <= resp.status_code < 300:
+                # Success!
+                break
+            else:
+                # server‐side error
+                body_snippet = resp.text[:200].strip().replace("\n", " ")
+                logger.warning(
+                    f"[Renderer] HTTP {resp.status_code} on attempt {attempt}: {body_snippet!r}"
+                )
+                last_exc = RuntimeError(f"HTTP {resp.status_code}")
+        # If we're not on the last attempt, back off then retry
+        if attempt < MAX_RENDERER_RETRIES:
+            backoff = BACKOFF_FACTORS[attempt - 1]
+            logger.info(f"Waiting {backoff}s before retrying renderer…")
+            await asyncio.sleep(backoff)
+    else:
+        # all attempts failed
+        detail_msg = str(last_exc) or "Unknown renderer failure"
+        raise HTTPException(status_code=502, detail=f"Renderer unavailable: {detail_msg}")
 
     # At this point response.json() should contain something like:
     #   { "videoUrl": "/media/videos/xxxxxxxx/final_animation.mp4", ... }
-    resp_json = response.json()
+    resp_json = resp.json()
 
-    # ─── Prepend the renderer’s hostname so that front-end can fetch the .mp4 ──────────
+    # ─── Prepend the renderer's hostname so that front-end can fetch the .mp4 ──────────
     raw_path = resp_json.get("videoUrl", "")
     full_video_url = f"{RENDERER_URL}{raw_path}"
     resp_json["videoUrl"] = full_video_url
 
     # Fill in our two computed fields:
-    resp_json["renderTime"] = round(render_elapsed, 2)
+    resp_json["renderTime"] = round(time.time() - start_time, 2)
     resp_json["codeLength"] = code_len
 
     # Add expandedPrompt if < 200 chars
