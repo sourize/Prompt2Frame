@@ -3,9 +3,7 @@
 import os
 import time
 import logging
-import asyncio
 from typing import Optional
-
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
@@ -22,11 +20,9 @@ logger = logging.getLogger("llm_service")
 
 RENDERER_URL = os.getenv("RENDERER_URL", "").rstrip("/")
 if not RENDERER_URL:
-    raise RuntimeError("Please set RENDERER_URL to your renderer service base URL")
+    raise RuntimeError("Please set RENDERER_URL to your renderer’s base URL")
 
 PORT = int(os.getenv("PORT", 8000))
-MAX_RENDERER_RETRIES = 3
-BACKOFF_DELAYS = [1, 2, 4]  # seconds between retries
 
 class GenerateRequest(BaseModel):
     prompt: str = Field(..., min_length=1, max_length=500)
@@ -39,112 +35,78 @@ class GenerateResponse(BaseModel):
     codeLength: int
     expandedPrompt: Optional[str] = None
 
-app = FastAPI(
-    title="Manim LLM Service",
-    version="1.0.0",
-)
-# Allow any origin so your React app can call this freely
+app = FastAPI(title="Manim LLM Service", version="1.0.0")
+
+# Allow our frontend to talk to us
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
-    allow_methods=["GET","POST","OPTIONS"],
+    allow_methods=["*"],
     allow_headers=["*"],
 )
 
-@app.on_event("startup")
-async def startup_event():
-    # Start the keep-awake ping loop
-    async def ping_loop():
-        async with httpx.AsyncClient() as client:
-            while True:
-                try:
-                    await client.get("http://localhost:8000/health")
-                except:
-                    pass
-                await asyncio.sleep(60)   # ping every minute
-    asyncio.create_task(ping_loop())
-
-    # Wait for renderer to be healthy
-    async with httpx.AsyncClient() as client:
-        for attempt in range(15):
-            try:
-                r = await client.get(f"{RENDERER_URL}/health")
-                if r.status_code == 200:
-                    break
-            except httpx.RequestError:
-                pass
-            await asyncio.sleep(1)
-        else:
-            raise HTTPException(
-                status_code=502,
-                detail="Renderer never became healthy"
-            )
-
 @app.post("/generate-code", response_model=GenerateResponse)
 async def generate_code_and_delegate(req: GenerateRequest):
-    start = time.time()
+    start_total = time.time()
+    user_prompt = req.prompt.strip()
 
     # 1) Expand
     try:
-        detailed = expand_prompt_with_fallback(req.prompt.strip())
-    except PromptExpansionError as e:
-        logger.error(f"Prompt expansion failed: {e}")
+        detailed = expand_prompt_with_fallback(user_prompt)
+    except PromptExpansionError:
+        logger.exception("Prompt expansion failed")
         raise HTTPException(500, "Prompt expansion failed")
-
-    logger.info(f"Expanded prompt: {detailed[:60]}…")
 
     # 2) Generate code
     try:
         code = generate_manim_code_with_fallback(detailed)
-    except Exception as e:
-        logger.error(f"Code generation failed: {e}")
+    except Exception:
+        logger.exception("Code generation failed")
         raise HTTPException(500, "Code generation failed")
 
-    logger.info(f"Generated code length: {len(code)} chars")
+    code_len = len(code)
 
     # 3) Call renderer with retries
     payload = {"code": code, "quality": req.quality, "timeout": req.timeout}
-    endpoint = f"{RENDERER_URL}/render"
-    last_error = None
-    for attempt in range(1, MAX_RENDERER_RETRIES + 1):
-        try:
-            async with httpx.AsyncClient(timeout=req.timeout + 30) as client:
-                resp = await client.post(endpoint, json=payload)
-        except Exception as e:
-            last_error = e
-            logger.warning(f"[Renderer] network error on attempt {attempt}: {e}")
+    url = f"{RENDERER_URL}/render"
+    render_start = time.time()
+    last_err = None
+
+    async with httpx.AsyncClient(timeout=req.timeout + 30) as client:
+        for attempt in range(1, 4):
+            try:
+                resp = await client.post(url, json=payload)
+                if resp.status_code == 200:
+                    break
+                # capture detail
+                detail = resp.json().get("detail", resp.text[:200])
+                logger.warning(f"[Renderer] attempt {attempt} returned {resp.status_code}: {detail}")
+            except Exception as e:
+                last_err = e
+                logger.warning(f"[Renderer] attempt {attempt} threw: {e!r}")
+            await asyncio.sleep(attempt)  # backoff
         else:
-            if 200 <= resp.status_code < 300:
-                data = resp.json()
-                break
-            else:
-                last_error = RuntimeError(f"HTTP {resp.status_code}")
-                snippet = resp.text[:200].replace("\n"," ")
-                logger.warning(f"[Renderer] HTTP {resp.status_code} on attempt {attempt}: {snippet!r}")
-        # backoff if more retries remain
-        if attempt < MAX_RENDERER_RETRIES:
-            delay = BACKOFF_DELAYS[attempt - 1]
-            logger.info(f"Waiting {delay}s before retrying renderer…")
-            await asyncio.sleep(delay)
-    else:
-        logger.error(f"All renderer attempts failed: {last_error}")
-        raise HTTPException(502, f"Renderer unavailable: {last_error}")
+            msg = last_err if last_err else f"Renderer failed after 3 attempts"
+            logger.error(msg)
+            raise HTTPException(502, str(msg))
 
-    # 4) Patch up the response
-    # renderer returns {"videoUrl": "/media/videos/...", "renderTime": X, "codeLength": Y}
-    raw_url = data.get("videoUrl", "")
-    data["videoUrl"] = f"{RENDERER_URL}{raw_url}"
+    render_end = time.time()
+
+    data = resp.json()
+    rel_path = data.get("videoUrl", "")
+    full_url = f"{RENDERER_URL}{rel_path}"
+
+    out = {
+        "videoUrl": full_url,
+        "renderTime": round(render_end - render_start, 2),
+        "codeLength": code_len,
+    }
     if len(detailed) < 200:
-        data["expandedPrompt"] = detailed
+        out["expandedPrompt"] = detailed
 
-    total = time.time() - start
-    logger.info(f"Total time (LLM+code+render): {total:.2f}s")
-    return data
+    logger.info(f"Total pipeline time: {time.time() - start_total:.2f}s")
+    return out
 
 @app.get("/health")
-async def health():
+def health():
     return {"status": "ok"}
-
-if __name__ == "__main__":
-    import uvicorn
-    uvicorn.run(app, host="0.0.0.0", port=PORT)
