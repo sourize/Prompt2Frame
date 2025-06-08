@@ -8,6 +8,7 @@ from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 import httpx
+import asyncio
 
 from prompt_expander import expand_prompt_with_fallback, PromptExpansionError
 from generator import generate_manim_code_with_fallback
