@@ -1,9 +1,10 @@
 name: Keep Manim Renderer Alive
 
 on:
-  schedule:
-    # Runs every 5 minutes
-    - cron: "*/5 * * * *"
+    workflow_dispatch:      # Allow “Run workflow” button
+    schedule:
+      - cron: "*/2 * * * *"
+  
 
 jobs:
   ping-renderer:
