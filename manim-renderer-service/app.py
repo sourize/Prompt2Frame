@@ -1,5 +1,3 @@
-# manim-renderer-service/app.py
-
 import os
 import shutil
 import tempfile
@@ -7,14 +5,13 @@ import uuid
 import subprocess
 import logging
 import time
-import asyncio
-import httpx
 from pathlib import Path
 from typing import List
 
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.staticfiles import StaticFiles    # ← Add this import
+from fastapi.staticfiles import StaticFiles
+from fastapi.routing import APIRoute
 from pydantic import BaseModel
 
 # -------- logging setup --------
@@ -28,23 +25,11 @@ logger = logging.getLogger("renderer_service")
 MEDIA_ROOT = Path(os.path.abspath("media/videos"))
 MEDIA_ROOT.mkdir(parents=True, exist_ok=True)
 
-# -------- FastAPI + CORS --------
+# -------- FastAPI + CORS + static files --------
 app = FastAPI(
     title="Manim Renderer Service",
     version="1.0.0",
 )
-
-@app.on_event("startup")
-async def keep_awake():
-    async def ping_loop():
-        async with httpx.AsyncClient() as client:
-            while True:
-                try:
-                    await client.get("http://localhost:8000/health")
-                except:
-                    pass
-                await asyncio.sleep(60)   # ping every minute
-    asyncio.create_task(ping_loop())
 
 app.add_middleware(
     CORSMiddleware,
@@ -54,7 +39,7 @@ app.add_middleware(
     allow_credentials=True,
 )
 
-# ← MOUNT /media/videos so that any GET /media/videos/... serves the actual *.mp4 files
+# Mount the actual video directory
 app.mount(
     "/media/videos",
     StaticFiles(directory=str(MEDIA_ROOT)),
@@ -196,7 +181,8 @@ async def render_endpoint(req: RenderRequest):
         except Exception:
             pass
 
-@app.get("/health")
+# -------- /health endpoint supporting GET & HEAD --------
+@app.api_route("/health", methods=["GET", "HEAD"])
 async def health_check():
     return {"status": "ok"}
 
