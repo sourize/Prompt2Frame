@@ -6,8 +6,14 @@ import ast
 import re
 from typing import Dict, Any
 import logging
+import time
 
 logger = logging.getLogger(__name__)
+
+# Helper to strip unsupported kwargs (opacity, fill_opacity, etc.)
+def _sanitize_code(code: str) -> str:
+    # remove any 'opacity=...', 'fill_opacity=...' inside constructor calls
+    return re.sub(r',\s*(?:opacity|fill_opacity)\s*=\s*[^,\)\n]+', '', code)
 
 def get_api_key() -> str:
     """Get the GROQ API key with proper error handling."""
@@ -36,7 +42,7 @@ SYSTEM = (
     "from manim import *\n"
     "import random  # permitted only for controlled randomness\n"
     "import numpy as np  # for vector arithmetic\n\n"
-    "Then define exactly one Scene subclass (class name arbitrary) that fully implements the user’s prompt. Follow these uncompromising rules:\n\n"
+    "Then define exactly one Scene subclass (class name arbitrary) that fully implements the user's prompt. Follow these uncompromising rules:\n\n"
 
     "1. CODE STRUCTURE:\n"
     "- Only the three imports above—no additional modules or asset loaders.\n"
@@ -248,6 +254,7 @@ def generate_manim_code(prompt: str, max_retries: int = 3) -> str:
             
             raw_code = response.choices[0].message.content.strip()
             code = _clean_and_format_code(raw_code)
+            code = _sanitize_code(code)
             
             # Comprehensive validation
             validator.validate_structure(code)
@@ -266,7 +273,6 @@ def generate_manim_code(prompt: str, max_retries: int = 3) -> str:
                 raise RuntimeError(f"Code generation failed after {max_retries} attempts: {str(e)}")
             
             # Brief pause before retry
-            import time
             time.sleep(1)
     
     # This should never be reached, but just in case
@@ -289,18 +295,11 @@ import numpy as np
 
 class FallbackScene(Scene):
     def construct(self):
-        # Create a simple animation
-        circle = Circle().set_color(BLUE)
-        text = Text("Animation Error").scale(0.7).next_to(circle, DOWN)
-        
-        self.play(
-            Create(circle),
-            run_time=1.0
-        )
-        self.play(
-            Create(text),
-            run_time=1.0
-        )
+        circle = Circle().set_color(BLUE).move_to(ORIGIN)
+        try:
+            self.play(Create(circle), run_time=1.0)
+        except RuntimeError as err:
+            raise RuntimeError(f"Fallback animation failed: {err}")
         self.wait(1)
 """
         return fallback_code
