@@ -1,0 +1,15 @@
+name: Keep Manim Renderer Alive
+
+on:
+  schedule:
+    # Runs every 5 minutes
+    - cron: "*/5 * * * *"
+
+jobs:
+  ping-renderer:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Ping Renderer Health Endpoint
+        run: |
+          curl -fsS https://manim-renderer-service.onrender.com/health \
+            || echo "Renderer ping failed at $(date)"
