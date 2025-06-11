@@ -30,13 +30,12 @@ const Index = ({ loading, setLoading }: { loading: boolean; setLoading: (val: bo
               <span className="text-2xl">❤️</span>
               <div className="flex flex-col">
                 <span className="text-sm font-medium text-gray-200">Built by Sourish</span>
-                <span className="text-xs text-gray-400">Crafting digital experiences</span>
               </div>
             </div>
             
             <div className="flex items-center gap-6">
               <a
-                href="https://github.com/sourize"
+                href="https://github.com/sourize/Prompt2Frame"
                 target="_blank"
                 rel="noopener noreferrer"
                 className="group flex items-center gap-2 text-gray-400 hover:text-white transition-colors duration-200"
