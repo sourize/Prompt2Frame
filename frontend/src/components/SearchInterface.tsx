@@ -27,7 +27,24 @@ const SearchInterface = ({ loading, setLoading }: { loading: boolean; setLoading
   const [prompt, setPrompt] = useState('');
   const [videoUrl, setVideoUrl] = useState('');
   const [error, setError] = useState('');
+  const [loadingStep, setLoadingStep] = useState(0);
   const videoRef = useRef<HTMLVideoElement>(null);
+
+  // Loading steps with their descriptions
+  const loadingSteps = [
+    "Analyzing your prompt...",
+    "Generating animation code...",
+    "Rendering your animation...",
+    "Finalizing the video..."
+  ];
+
+  // Tips to show during loading
+  const loadingTips = [
+    "Tip: Keep prompts concise for faster generation",
+    "Tip: Simple geometric shapes render faster",
+    "Tip: You can create multiple animations in one prompt",
+    "Tip: Try adding color transitions for more dynamic results"
+  ];
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -42,9 +59,16 @@ const SearchInterface = ({ loading, setLoading }: { loading: boolean; setLoading
     setLoading(true);
     setError('');
     setVideoUrl('');
+    setLoadingStep(0);
     if (videoRef.current) {
       videoRef.current.load();
     }
+
+    // Start the loading steps animation
+    const stepInterval = setInterval(() => {
+      setLoadingStep(prev => (prev + 1) % loadingSteps.length);
+    }, 15000); // Change step every 15 seconds
+
     try {
       toast({
         title: "Generating animation",
@@ -61,8 +85,8 @@ const SearchInterface = ({ loading, setLoading }: { loading: boolean; setLoading
         }
       );
 
-      // response.data.videoUrl is now a FULL URL, e.g.
-      // "https://manim-renderer-service.onrender.com/media/videos/abcd1234/final_animation.mp4"
+      clearInterval(stepInterval); // Clear the interval when done
+
       const returnedUrl: string = response.data.videoUrl;
       const fullUrl = returnedUrl + `?t=${Date.now()}`; // cache-bust
       console.log('Video URL:', fullUrl);
@@ -73,6 +97,7 @@ const SearchInterface = ({ loading, setLoading }: { loading: boolean; setLoading
         description: "Your animation has been generated successfully.",
       });
     } catch (err: any) {
+      clearInterval(stepInterval); // Clear the interval on error
       console.error('Error:', err);
       setError(err.response?.data?.error || 'Failed to generate animation. Please try again.');
       toast({
@@ -316,15 +341,52 @@ const SearchInterface = ({ loading, setLoading }: { loading: boolean; setLoading
                   ) : (
                     <div className="text-gray-400 p-8 text-center">
                       {loading ? (
-                        <motion.div
-                          animate={{ rotate: 360 }}
-                          transition={{ repeat: Infinity, duration: 2, ease: "linear" }}
-                          className="mx-auto mb-3 w-8 h-8 border-2 border-blue-500 border-t-transparent rounded-full"
-                        />
+                        <div className="space-y-6">
+                          <motion.div
+                            animate={{ rotate: 360 }}
+                            transition={{ repeat: Infinity, duration: 2, ease: "linear" }}
+                            className="mx-auto mb-3 w-12 h-12 border-4 border-blue-500 border-t-transparent rounded-full"
+                          />
+                          <div className="space-y-4">
+                            <motion.div
+                              initial={{ opacity: 0, y: 10 }}
+                              animate={{ opacity: 1, y: 0 }}
+                              transition={{ duration: 0.5 }}
+                              className="text-lg font-medium text-white"
+                            >
+                              {loadingSteps[loadingStep]}
+                            </motion.div>
+                            <motion.div
+                              initial={{ opacity: 0 }}
+                              animate={{ opacity: 1 }}
+                              transition={{ duration: 0.5, delay: 0.2 }}
+                              className="text-sm"
+                            >
+                              {loadingTips[loadingStep]}
+                            </motion.div>
+                            <div className="flex justify-center gap-2">
+                              {loadingSteps.map((_, index) => (
+                                <motion.div
+                                  key={index}
+                                  className={`w-2 h-2 rounded-full ${
+                                    index === loadingStep ? 'bg-blue-500' : 'bg-gray-600'
+                                  }`}
+                                  animate={{
+                                    scale: index === loadingStep ? 1.2 : 1,
+                                    opacity: index === loadingStep ? 1 : 0.5
+                                  }}
+                                  transition={{ duration: 0.3 }}
+                                />
+                              ))}
+                            </div>
+                          </div>
+                        </div>
                       ) : (
-                        <Video size={40} className="mx-auto mb-3 text-gray-500" />
+                        <>
+                          <Video size={40} className="mx-auto mb-3 text-gray-500" />
+                          <p>Your animation will appear here</p>
+                        </>
                       )}
-                      <p>{loading ? 'Generating animation...' : 'Your animation will appear here'}</p>
                     </div>
                   )}
                 </div>
