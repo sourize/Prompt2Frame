@@ -3,7 +3,7 @@ name: Keep Manim Renderer Alive
 on:
     workflow_dispatch:      # Allow “Run workflow” button
     schedule:
-      - cron: "*/2 * * * *"
+      - cron: "* * * * *"  # Run every minute
   
 
 jobs:

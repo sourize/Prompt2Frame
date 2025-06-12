@@ -1,10 +1,9 @@
 name: Keep Manim LLM Service Alive
 
 on:
-    workflow_dispatch:      # Allow “Run workflow” button
+    workflow_dispatch:      # Allow "Run workflow" button
     schedule:
-      - cron: "*/2 * * * *"
-  
+      - cron: "* * * * *"  # Run every minute
 
 jobs:
   ping-llm-service:
