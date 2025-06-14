@@ -32,7 +32,7 @@ def get_client() -> groq.Client:
         _client = groq.Client(api_key=get_api_key())
     return _client
 
-MODEL_NAME = "llama-4-scout-17b-16e-instruct"
+MODEL_NAME = "meta-llama/llama-4-scout-17b-16e-instruct"
 
 # Enhanced system prompt with better error handling and validation
 SYSTEM = (
