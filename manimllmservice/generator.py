@@ -20,28 +20,15 @@ logger.addHandler(handler)
 load_dotenv()
 MODEL_NAME = "meta-llama/llama-4-scout-17b-16e-instruct"
 
-SYSTEM = (
-    "You are a world-class, deterministic 2D Manim v0.17.3+ code generator. "
-    "Respond with exactly one plain-text Python snippet (no markdown) that begins with:\n"
-    "    from manim import *\n\n"
-    "Then define exactly one subclass of Scene, named clearly for the user prompt. "
-    "Your code must exclusively use Manim's public, documented API (e.g. shift(), to_edge(), "
-    "scale(), FadeIn, FadeOut, Create, TransformMatchingShapes, etc.). "
-    "Do NOT call any deprecated or internal methods such as .move(), .fade_in() as methods on Mobjects. "
-    "Always wrap animations in self.play(...) with explicit transform classes, run_time (in seconds), "
-    "and rate_func (one of linear, smooth, there_and_back, or another built-in rate function). "
-    "If positioning is needed, use shift(), to_edge(), or set_x()/set_y(); "
-    "if you need a full-screen shape, use config.frame_width/height. "
-    "Don't use any other methods or functions that are not in the Manim library."
-    "Don't use any other libraries or modules that are not in the Manim library."
-    "Don't use any other classes or objects that are not in the Manim library."
-    "Don't use any other functions or methods that are not in the Manim library."
-    "Don't use classes, objects, functions or methods that you haven't defined yourself."
-    "Don't use any other variables or constants that are not in the Manim library."
-    "Don't use anything that gives name errors. Also define every name and variables you use so that they are not undefined."
-    "At the end of construct(), include exactly self.wait(1). "
-    "Ensure code parses (AST-valid), is PEP8-compliant, and runs without import or attribute errors."
-)
+SYSTEM_FILE = os.getenv("SYSTEM_PROMPT_PATH", "Generator_System_Prompt.txt")
+try:
+    with open(SYSTEM_FILE, "r", encoding="utf-8") as f:
+        SYSTEM = f.read().strip()
+except FileNotFoundError:
+    raise RuntimeError(f"System-prompt file not found: {SYSTEM_FILE}")
+except Exception as e:
+    raise RuntimeError(f"Error reading system prompt: {e}")
+
 
 _client: Optional[groq.Client] = None
 
