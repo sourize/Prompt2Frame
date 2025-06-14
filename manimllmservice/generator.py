@@ -35,7 +35,7 @@ def get_client() -> groq.Client:
 MODEL_NAME = "meta-llama/llama-4-scout-17b-16e-instruct"
 
 # Enhanced system prompt with better error handling and validation
-SYSTEM_PROMPT = """
+SYSTEM = """
 You are a deterministic, production‑grade code generator for 2D Manim v0.17.3+ animations.  
 All output must be pure Python3, no markdown or comments outside code blocks.  
 
