@@ -66,6 +66,28 @@ class CodeValidator:
         if len(scenes) != 1:
             raise RuntimeError("Expected exactly one subclass of Scene in snippet")
 
+    @staticmethod
+    def validate_animations(code: str):
+        # Check for deprecated methods
+        deprecated_methods = [
+            (".fade_in()", "self.play(FadeIn(object))"),
+            (".fade_out()", "self.play(FadeOut(object))"),
+            (".move(", ".shift("),
+        ]
+        for old, new in deprecated_methods:
+            if old in code:
+                raise RuntimeError(f"Deprecated method {old} used. Use {new} instead")
+
+        # Check for invalid Scene animation
+        if "FadeIn(self)" in code or "FadeOut(self)" in code:
+            raise RuntimeError("Cannot animate the Scene itself (self)")
+
+        # Check for missing run_time in animations
+        animation_calls = [line for line in code.splitlines() if "self.play(" in line]
+        for call in animation_calls:
+            if "run_time=" not in call:
+                raise RuntimeError(f"Animation missing run_time: {call}")
+
 # ─── Sanitization ────────────────────────────────────────────────────────────
 def _fix_indentation(code: str) -> str:
     """Fix indentation in the code to use exactly 4 spaces."""
@@ -162,6 +184,7 @@ def generate_manim_code(prompt: str, max_retries: int = 3) -> str:
             
             validator.validate_structure(code)
             validator.validate_syntax(code)
+            validator.validate_animations(code)
             return code
 
         except Exception as e:

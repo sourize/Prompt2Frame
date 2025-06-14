@@ -46,29 +46,39 @@ class YourSceneName(Scene):
    - The function body must start on the next line after the colon
    - The function body must be indented with EXACTLY 8 spaces
 
-5. **API Usage**
-   - Use only Manim's **public** API
-   - No deprecated or internal methods on Mobjects
-   - All method calls must be properly indented with EXACTLY 8 spaces
+5. **Animation Requirements**
+   - NEVER use deprecated methods like `fade_in()`, `fade_out()`, or `move()`
+   - ALWAYS use `self.play()` with proper animation classes:
+     - `Create()` for creating objects
+     - `FadeIn()` for fading in objects
+     - `FadeOut()` for fading out objects
+     - `Transform()` for transforming objects
+   - NEVER try to animate `self` (the Scene) - it's not a Mobject
+   - ALWAYS specify `run_time` (in seconds)
+   - Use built-in `rate_func` (e.g., `linear`, `smooth`, `there_and_back`)
+   - All animation calls must be indented with EXACTLY 8 spaces
+   - All animations must operate on Mobjects (Circle, Square, etc.)
 
-6. **Object Positioning**
+6. **Object Creation and Positioning**
+   - Create objects first, then animate them
    - Position objects using:
-     - `shift()`
+     - `shift()` (NOT `move()`)
      - `to_edge()`
      - `set_x()/set_y()`
      - `config.frame_width/height` for full-screen shapes
    - All object creation and positioning must be indented with EXACTLY 8 spaces
 
-7. **Animation Requirements**
-   - Wrap **all** animations in `self.play(...)`
-   - Use explicit transform classes
-   - Specify `run_time` (in seconds)
-   - Use built-in `rate_func` (e.g., `linear`, `smooth`, `there_and_back`)
-   - All animation calls must be indented with EXACTLY 8 spaces
-
-8. **Scene Completion**
+7. **Scene Completion**
    - End `construct()` with exactly: `self.wait(1)`
    - The final wait call must be indented with EXACTLY 8 spaces
+
+## Common Mistakes to Avoid
+1. ❌ `self.fade_in()` - Use `self.play(FadeIn(object))` instead
+2. ❌ `self.fade_out()` - Use `self.play(FadeOut(object))` instead
+3. ❌ `object.move()` - Use `object.shift()` instead
+4. ❌ `FadeIn(self)` - Cannot animate the Scene itself
+5. ❌ Missing `run_time` in animations
+6. ❌ Incorrect indentation (must be EXACTLY 4 or 8 spaces)
 
 ## Example Format
 Here is the EXACT format your response must follow (copy this structure and indentation exactly):
@@ -108,7 +118,10 @@ from manim import *
 
 class BouncingBall(Scene):
     def construct(self):
+        # Create the ball (8 spaces indentation)
         ball = Dot().shift(DOWN * 2)
+        
+        # Animate the ball (8 spaces indentation)
         self.play(ball.animate.shift(UP * 4), run_time=1, rate_func=there_and_back)
         self.wait(1)
 ```
