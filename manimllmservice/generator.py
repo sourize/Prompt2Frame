@@ -9,211 +9,119 @@ import groq
 from dotenv import load_dotenv
 import numpy as np
 
-# --- Logging Setup ---------------------------------------------------------
-logger = logging.getLogger(__name__)
-logger.setLevel(logging.INFO)
-if not logger.handlers:
-    handler = logging.StreamHandler()
-    formatter = logging.Formatter("%(asctime)s - %(levelname)s - %(message)s")
-    handler.setFormatter(formatter)
-    logger.addHandler(handler)
+# Configure logger
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s - %(levelname)s - %(message)s",
+)
+logger = logging.getLogger("generator_service")
 
-# --- Utility Functions -----------------------------------------------------
+# --- Helper to sanitize code from assistant ---
 def _sanitize_code(code: str) -> str:
-    """
-    Remove unsupported Manim keyword args like opacity and fill_opacity.
-    """
-    return re.sub(r",\s*(?:opacity|fill_opacity)\s*=\s*[^,\)\n]+", "", code)
+    # Remove markdown fences
+    code = re.sub(r"```(?:python)?", "", code)
+    # Remove unsupported kwargs like opacity, fill_opacity
+    code = re.sub(r",\s*(?:opacity|fill_opacity)\s*=\s*[^,\)\n]+", "", code)
+    # Strip leading/trailing blank lines
+    lines = [ln.rstrip() for ln in code.splitlines()]
+    while lines and not lines[0].strip():
+        lines.pop(0)
+    while lines and not lines[-1].strip():
+        lines.pop()
+    return "\n".join(lines)
 
-def ease_in_out_sine(t: float) -> float:
-    """
-    Sine-based easing function.
-    """
-    from math import cos, pi
-    return 0.5 * (1 - cos(pi * t))
-
-# --- GROQ Client -----------------------------------------------------------
-def get_api_key() -> str:
+# --- Environment & Client ---
+def _get_api_key() -> str:
     load_dotenv()
-    api_key = os.getenv("GROQ_API_KEY")
-    if not api_key:
-        raise RuntimeError("Environment variable GROQ_API_KEY is not set.")
-    return api_key
+    key = os.getenv("GROQ_API_KEY")
+    if not key:
+        raise RuntimeError("GROQ_API_KEY not set in environment.")
+    return key
 
 _client: Optional[groq.Client] = None
 
 def get_client() -> groq.Client:
     global _client
     if _client is None:
-        _client = groq.Client(api_key=get_api_key())
+        _client = groq.Client(api_key=_get_api_key())
     return _client
 
-# --- System Prompt ---------------------------------------------------------
+# --- System Prompt ---
 MODEL_NAME = "meta-llama/llama-4-scout-17b-16e-instruct"
-SYSTEM = (
-    "You are a deterministic, production‐grade code generator for 2D Manim v0.17.3+ animations.  "
-    "All output must be pure Python3, no markdown or comments outside the code block.\n\n"
-
-    "1. **IMPORTS**\n"
-    "   Always begin with exactly these three lines (no more, no less):\n"
-    "```python\n"
+SYSTEM_PROMPT = (
+    "You are a deterministic, production-grade code generator for 2D Manim v0.17.3+ animations. "
+    "Output only pure Python code, no markdown or explanations. "
+    "Begin with exactly these imports:\n"
     "from manim import *\n"
     "import random  # for any randomness\n"
     "import numpy as np  # for vector arithmetic\n"
-    "```\n\n"
-
-    "2. **HELPER FUNCTIONS**\n"
-    "- Immediately after imports, define *any* helper you will use (e.g. easing, clamp).\n"
-    "- Each `def` must include a non‐empty indented body (even if just `pass`).\n"
-    "- Example:\n"
-    "```python\n"
+    "Then define any helper functions you need with non-empty bodies, e.g.:\n"
     "def ease_in_out_sine(t: float) -> float:\n"
     "    from math import cos, pi\n"
     "    return 0.5 * (1 - cos(pi * t))\n"
-    "```\n\n"
-
-    "3. **SCENE CLASS**\n"
-    "- Define exactly one `class MyScene(Scene):` with one `def construct(self):`.\n"
-    "- Use 4‐space indents, no tabs; one blank line between imports, helpers, class header, and method body.\n"
-    "- Balanced parentheses/brackets/braces.\n\n"
-
-    "4. **ASSETS & POSITIONING**\n"
-    "- Only built‑in primitives: `Circle()`, `Square()`, `Triangle()`, `Rectangle()`, `Line()`, `Dot()`, `Ellipse()`, `Polygon()`, `ParametricFunction`.\n"
-    "- Position via `.move_to()`, `.shift()`, or `LEFT*2 + UP*1`; clamp out‑of‑bounds or `raise RuntimeError('Out of bounds')`.\n"
-    "- Colors only: `RED, BLUE, GREEN, YELLOW, PURPLE, ORANGE, WHITE`.\n\n"
-
-    "5. **ANIMATIONS**\n"
-    "- Only `Create`, `Transform`, `ReplacementTransform`, `FadeIn`, `FadeOut`.\n"
-    "- Chain `.animate` for property changes inside `self.play()`.\n"
-    "- One `self.play()` per line, max 6 calls, each `run_time` 0.5–2.0s.\n"
-    "- Wrap each in `try/except RuntimeError as e: raise RuntimeError(f\"... failed: {e}\")`.\n"
-    "- End with `self.wait(1)`.\n\n"
-
-    "6. **LIMITS & VALIDATION**\n"
-    "- ≤8 mobjects at once, ≤3 color changes, total runtime 5–8s.\n"
-    "- Meaningful variable names; initialize before use.\n\n"
-
-    "7. **NO NAME ERRORS**\n"
-    "- Every name you reference (helpers or Manim constructs) must be defined above.\n\n"
-
-    "**Example skeleton (do NOT copy verbatim unless following all rules):**\n"
-    "```python\n"
-    "from manim import *\n"
-    "import random  # for any randomness\n"
-    "import numpy as np  # for vector arithmetic\n\n"
-    "def ease_in_out_sine(t: float) -> float:\n"
-    "    from math import cos, pi\n"
-    "    return 0.5 * (1 - cos(pi * t))\n\n"
-    "class TransformingShape(Scene):\n"
-    "    def construct(self):\n"
-    "        circle = Circle().set_color(BLUE).move_to(LEFT*2)\n"
-    "        square = Square().set_color(RED).move_to(RIGHT*2)\n\n"
-    "        try:\n"
-    "            self.play(Create(circle), run_time=1.0)\n"
-    "        except RuntimeError as e:\n"
-    "            raise RuntimeError(f\"Create failed: {e}\")\n\n"
-    "        try:\n"
-    "            self.play(\n"
-    "                Transform(circle, square, rate_func=ease_in_out_sine),\n"
-    "                square.animate.set_color(GREEN),\n"
-    "                run_time=2.0\n"
-    "            )\n"
-    "        except RuntimeError as e:\n"
-    "            raise RuntimeError(f\"Transform failed: {e}\")\n\n"
-    "        self.wait(1)\n"
-    "```"
+    "Define one Scene subclass with construct(self) method. "
+    "Use only built-in primitives, valid animations, and wrap each self.play in try/except. "
+    "Ensure any name you reference is defined above."
 )
 
-
-
-# --- Code Validation ------------------------------------------------------
-class CodeValidator:
+# --- Code Validator ---
+class Validator:
     @staticmethod
-    def validate_syntax(code: str) -> None:
+    def parse(code: str):
         try:
-            ast.parse(code)
-        except SyntaxError as exc:
-            raise RuntimeError(f"Syntax error: {exc}")
+            return ast.parse(code)
+        except SyntaxError as e:
+            raise RuntimeError(f"Syntax error in code: {e}")
 
     @staticmethod
-    def validate_structure(code: str) -> None:
+    def check_structure(tree: ast.AST, code: str):
         if not code.startswith("from manim import *"):
             raise RuntimeError("Code must start with 'from manim import *'.")
-        if "import numpy as np" not in code:
-            raise RuntimeError("Missing 'import numpy as np'.")
-        forbidden = ["import os", "import sys", "subprocess", "shutil"]
-        for item in forbidden:
-            if item in code:
-                raise RuntimeError(f"Forbidden import: {item}")
+        classes = [n for n in ast.walk(tree) if isinstance(n, ast.ClassDef)]
+        if len(classes) != 1:
+            raise RuntimeError(f"Expected exactly one class, found {len(classes)}.")
 
-    @staticmethod
-    def validate_scene_class(code: str) -> None:
-        tree = ast.parse(code)
-        scenes = [node for node in ast.walk(tree)
-                  if isinstance(node, ast.ClassDef)
-                  and any(isinstance(b, ast.Name) and b.id == 'Scene' for b in node.bases)]
-        if len(scenes) != 1:
-            raise RuntimeError(f"Expected one Scene subclass, found {len(scenes)}.")
-
-    @staticmethod
-    def validate_delimiters(code: str) -> None:
-        for o, c in [('(', ')'), ('[', ']'), ('{', '}')]:
-            if code.count(o) != code.count(c):
-                raise RuntimeError(f"Unmatched delimiter {o} vs {c}.")
-
-    @staticmethod
-    def validate_colors(code: str) -> None:
-        # Replace any undefined custom colors
-        undefined = re.findall(r"\.set_color\(([^)]+)\)", code)
-        for color in undefined:
-            if color.strip() not in ["RED","BLUE","GREEN","YELLOW","PURPLE","ORANGE","WHITE"]:
-                raise RuntimeError(f"Undefined color: {color}")
-
-# --- Core Generation ------------------------------------------------------
-def _clean_and_format_code(raw: str) -> str:
-    code = re.sub(r"```(?:python)?", "", raw).strip('`\n ')
-    return "\n".join(line.rstrip() for line in code.splitlines())
-
-def generate_manim_code(prompt: str, max_retries: int = 3) -> str:
-    validator = CodeValidator()
-    client = get_client()
-
-    for attempt in range(1, max_retries + 1):
-        logger.info(f"Attempt {attempt}/{max_retries}")
+# --- Generation Logic ---
+def generate_code(prompt: str, retries: int = 3) -> str:
+    for i in range(1, retries + 1):
+        logger.info(f"Generation attempt {i}/{retries}")
         try:
-            response = client.chat.completions.create(
+            client = get_client()
+            resp = client.chat.completions.create(
                 model=MODEL_NAME,
-                messages=[{"role":"system","content":SYSTEM},{"role":"user","content":prompt}],
-                temperature=0.2 + 0.1*(attempt-1),
+                messages=[
+                    {"role": "system", "content": SYSTEM_PROMPT},
+                    {"role": "user", "content": prompt},
+                ],
+                temperature=0.2 + 0.1 * (i - 1),
+                max_tokens=2000,
                 top_p=0.9,
-                max_tokens=2000
             )
-            raw = response.choices[0].message.content
-            code = _sanitize_code(_clean_and_format_code(raw))
-
-            validator.validate_structure(code)
-            validator.validate_syntax(code)
-            validator.validate_scene_class(code)
-            validator.validate_delimiters(code)
-            validator.validate_colors(code)
-
-            logger.info("Code generation succeeded.")
+            raw = resp.choices[0].message.content
+            code = _sanitize_code(raw)
+            tree = Validator.parse(code)
+            Validator.check_structure(tree, code)
+            logger.info("Code generation successful.")
             return code
-        except Exception as exc:
-            logger.warning(f"Generation failed: {exc}")
-            if attempt == max_retries:
-                raise RuntimeError(f"Generation failed after {attempt} attempts: {exc}")
+        except Exception as e:
+            logger.warning(f"Attempt {i} failed: {e}")
+            if i == retries:
+                raise RuntimeError(f"Code generation failed after {retries} attempts: {e}")
             time.sleep(1)
 
-# --- Fallback --------------------------------------------------------------
-def generate_manim_code_with_fallback(prompt: str) -> str:
+    raise RuntimeError("Unexpected error in code generation.")
+
+# --- Fallback ---
+def generate_code_with_fallback(prompt: str) -> str:
     try:
-        return generate_manim_code(prompt)
-    except RuntimeError as exc:
-        logger.error(f"Falling back due to: {exc}")
+        return generate_code(prompt)
+    except RuntimeError as e:
+        logger.error(f"Primary generation failed: {e}")
+        # Minimal fallback scene
         return (
             "from manim import *\n"
-            "import numpy as np\n\n"
+            "import random  # for any randomness\n"
+            "import numpy as np  # for vector arithmetic\n\n"
             "class FallbackScene(Scene):\n"
             "    def construct(self):\n"
             "        circle = Circle().set_color(BLUE).move_to(ORIGIN)\n"
@@ -221,5 +129,5 @@ def generate_manim_code_with_fallback(prompt: str) -> str:
             "            self.play(Create(circle), run_time=1.0)\n"
             "        except RuntimeError as err:\n"
             "            raise RuntimeError(f'Fallback failed: {err}')\n"
-            "        self.wait(1)\n"
+            "        self.wait(1)"
         )
