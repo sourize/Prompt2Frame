@@ -1,3 +1,4 @@
+# ===== app.py =====
 import os
 import time
 import logging
@@ -5,7 +6,7 @@ import asyncio
 from typing import Dict, Any
 
 import httpx
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 
@@ -39,8 +40,7 @@ class GenerateResponse(BaseModel):
     codeLength: int
     expandedPrompt: str | None = None
 
-# FastAPI app initialization
-app = FastAPI(title="Manim LLM Service", version="1.0.0")
+app = FastAPI(title="Manim LLM Service", version="1.1.0")
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -50,9 +50,6 @@ app.add_middleware(
 
 @app.on_event("startup")
 async def keep_awake():
-    """
-    Periodically ping own /health endpoint to prevent sleep.
-    """
     url = f"http://localhost:{INTERNAL_PORT}/health"
     async def ping_loop():
         async with httpx.AsyncClient(timeout=5) as client:
@@ -67,9 +64,6 @@ async def keep_awake():
     logger.info("Started self-ping loop to /health every 60s")
 
 async def post_with_retries(endpoint: str, payload: Dict[str, Any], timeout: int) -> Dict[str, Any]:
-    """
-    POST JSON payload to endpoint with exponential backoff.
-    """
     backoff = 1.0
     async with httpx.AsyncClient(timeout=timeout) as client:
         for attempt in range(1, 6):
@@ -86,36 +80,29 @@ async def post_with_retries(endpoint: str, payload: Dict[str, Any], timeout: int
 
 @app.post("/generate-code", response_model=GenerateResponse)
 async def generate_code_and_delegate(req: GenerateRequest) -> GenerateResponse:
-    """
-    Expand prompt, generate Manim code, delegate rendering, and return video URL.
-    """
     start_total = time.time()
     logger.info("Received /generate-code; expanding prompt")
 
-    # 1) Expand user prompt
     try:
         detailed = expand_prompt_with_fallback(req.prompt.strip())
     except PromptExpansionError as e:
         logger.error(f"Prompt expansion failed: {e}")
-        raise HTTPException(status_code=500, detail="Prompt expansion failed")
+        raise HTTPException(status_code=400, detail="Invalid prompt input")
     logger.info(f"Expanded prompt: {detailed[:60]}…")
 
-    # 2) Generate Manim code
     try:
         code = generate_manim_code_with_fallback(detailed)
     except Exception as e:
         logger.error(f"Code generation failed: {e}")
         raise HTTPException(status_code=500, detail="Code generation failed")
-    code_length = len(code)
 
-    # 3) Delegate to renderer
+    code_length = len(code)
     payload = {"code": code, "quality": req.quality, "timeout": req.timeout}
     render_endpoint = f"{RENDERER_URL}/render"
     start_render = time.time()
     result = await post_with_retries(render_endpoint, payload, timeout=req.timeout + 10)
     render_time = time.time() - start_render
 
-    # 4) Build response
     video_path = result.get("videoUrl")
     if not video_path:
         raise HTTPException(status_code=502, detail="Renderer response missing videoUrl")
@@ -130,9 +117,8 @@ async def generate_code_and_delegate(req: GenerateRequest) -> GenerateResponse:
     logger.info(f"Total service time: {time.time() - start_total:.2f}s")
     return response
 
-@app.api_route("/health", methods=["GET", "HEAD"])
-async def health() -> Dict[str, str]:
-    """Health check endpoint responding to GET and HEAD."""
+@app.get("/health")
+async def health(request: Request) -> Dict[str, str]:
     return {"status": "ok"}
 
 if __name__ == "__main__":
