@@ -23,12 +23,14 @@ MODEL_NAME = "meta-llama/llama-4-scout-17b-16e-instruct"
 SYSTEM = (
     "You are a world‑class, deterministic 2D Manim v0.17.3+ code generator. "
     "Respond with a single plain‑text Python snippet (no markdown) that begins with "
-    "`from manim import *` (to import everything, including easing functions). "
-    "Do NOT import Manim in this service layer—emit the snippet only. "
+    "`from manim import *` (so that `config`, easing, shapes, etc. are available). "
+    "Do NOT import Manim in this service layer—emit only the snippet. "
     "Define exactly one subclass of `Scene`, named based on the prompt. "
-    "Wrap every animation in `self.play(...)` calls with explicit transforms, "
-    "run_time, and rate_func. Convert any `.fade_in()` or `.fade_out()` calls into "
+    "Wrap every animation in `self.play(...)` with explicit transforms, "
+    "run_time, and rate_func. Convert `.fade_in()`/`.fade_out()` calls into "
     "`self.play(FadeIn/Out(...), run_time=…, rate_func=…)`. "
+    "If you need a full‑screen rectangle, use:\n"
+    "  `screen = Rectangle(width=config.frame_width, height=config.frame_height, fill_opacity=1)`\n"
     "At the end of `construct`, include `self.wait(1)`. "
     "Use clear variable names, 4‑space indentation, and adhere to PEP8."
 )
@@ -58,20 +60,18 @@ class CodeValidator:
 
     @staticmethod
     def validate_structure(code: str):
-        # Must start with wildcard import
         if not code.strip().startswith("from manim import *"):
-            raise RuntimeError("Generated snippet must start with `from manim import *`")
-        # Exactly one Scene subclass
+            raise RuntimeError("Snippet must start with `from manim import *`")
         scenes = [
             ln for ln in code.splitlines()
             if ln.strip().startswith("class ") and "(Scene)" in ln
         ]
         if len(scenes) != 1:
-            raise RuntimeError("Expected exactly one subclass of Scene in snippet")
+            raise RuntimeError("Expected exactly one `Scene` subclass")
 
 # ─── Sanitization ────────────────────────────────────────────────────────────
 def sanitize_common_errors(code: str) -> str:
-    # Convert .fade_out() → self.play(FadeOut(...))
+    # .fade_out() → self.play(FadeOut(...))
     code = re.sub(
         r"(\w+)\.fade_out\(\)",
         r"self.play(FadeOut(\1), run_time=1, rate_func=linear)",
@@ -82,6 +82,27 @@ def sanitize_common_errors(code: str) -> str:
         r"self.play(FadeIn(\1), run_time=1, rate_func=linear)",
         code,
     )
+    return code
+
+def sanitize_rectangle(code: str) -> str:
+    """
+    Replace any Rectangle(...) with four corner args by a full-screen rectangle.
+    """
+    pattern = r"(\w+)\s*=\s*Rectangle\([^)]*\)"
+    replacement = (
+        r"\1 = Rectangle(\n"
+        r"    width=config.frame_width,\n"
+        r"    height=config.frame_height,\n"
+        r"    fill_opacity=1\n"
+        r")"
+    )
+    return re.sub(pattern, replacement, code)
+
+def inject_missing_imports(code: str) -> str:
+    """
+    Ensure `config` is available. Since we do `from manim import *`, config is already
+    in scope, so no extra imports needed here.
+    """
     return code
 
 def _strip_fences(code: str) -> str:
@@ -101,13 +122,15 @@ def generate_manim_code(prompt: str, max_retries: int = 3) -> str:
                     {"role": "system",  "content": SYSTEM},
                     {"role": "user",    "content": prompt},
                 ],
-                temperature=0.2 + 0.1*(attempt-1),
+                temperature=0.2 + 0.1 * (attempt - 1),
                 max_tokens=1500,
                 top_p=0.9,
             )
-            raw = resp.choices[0].message.content
-            code = _strip_fences(raw)
+            code = resp.choices[0].message.content
+            code = _strip_fences(code)
             code = sanitize_common_errors(code)
+            code = sanitize_rectangle(code)
+            code = inject_missing_imports(code)
             validator.validate_structure(code)
             validator.validate_syntax(code)
             return code
@@ -125,7 +148,6 @@ def generate_manim_code_with_fallback(prompt: str) -> str:
         return generate_manim_code(prompt)
     except Exception as e:
         logger.error(f"Primary generation failed, using fallback: {e}")
-        # Minimal self-contained fallback snippet
         return (
             "from manim import *\n"
             "import numpy as np\n\n"
