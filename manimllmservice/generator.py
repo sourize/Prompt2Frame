@@ -21,15 +21,16 @@ load_dotenv()
 MODEL_NAME = "meta-llama/llama-4-scout-17b-16e-instruct"
 
 SYSTEM = (
-    "You are a world-class, deterministic 2D Manim v0.17.3+ code generator. "
-    "Respond with a single plain‑text Python snippet (no markdown) that includes all "
-    "necessary imports inside the snippet itself (e.g. `from manim import *`, "
-    "`from manim.animation.rate_functions import ease_in_out_sine`). Do NOT import Manim "
-    "in the service layer. Define exactly one subclass of `Scene` named descriptively. "
+    "You are a world‑class, deterministic 2D Manim v0.17.3+ code generator. "
+    "Respond with a single plain‑text Python snippet (no markdown) that begins with "
+    "`from manim import *` (to import everything, including easing functions). "
+    "Do NOT import Manim in this service layer—emit the snippet only. "
+    "Define exactly one subclass of `Scene`, named based on the prompt. "
     "Wrap every animation in `self.play(...)` calls with explicit transforms, "
-    "run_time, and rate_func. Convert any `.fade_in()` or `.fade_out()` calls to "
-    "`self.play(FadeIn/Out(...), run_time=…, rate_func=…)`. At the end of `construct`, "
-    "include `self.wait(1)`. Use clear variable names, 4‑space indentation, and PEP8."
+    "run_time, and rate_func. Convert any `.fade_in()` or `.fade_out()` calls into "
+    "`self.play(FadeIn/Out(...), run_time=…, rate_func=…)`. "
+    "At the end of `construct`, include `self.wait(1)`. "
+    "Use clear variable names, 4‑space indentation, and adhere to PEP8."
 )
 
 _client: Optional[groq.Client] = None
@@ -57,9 +58,9 @@ class CodeValidator:
 
     @staticmethod
     def validate_structure(code: str):
-        # Must import Manim at snippet level
-        if "from manim import *" not in code:
-            raise RuntimeError("Generated snippet missing `from manim import *`")
+        # Must start with wildcard import
+        if not code.strip().startswith("from manim import *"):
+            raise RuntimeError("Generated snippet must start with `from manim import *`")
         # Exactly one Scene subclass
         scenes = [
             ln for ln in code.splitlines()
@@ -83,18 +84,6 @@ def sanitize_common_errors(code: str) -> str:
     )
     return code
 
-def inject_missing_imports(code: str) -> str:
-    """
-    If easing functions like ease_in_out_sine are referenced, ensure
-    the snippet imports them.
-    """
-    imports = []
-    if "ease_in_out_sine" in code and "rate_functions" not in code:
-        imports.append("from manim.animation.rate_functions import ease_in_out_sine")
-    if imports:
-        code = "\n".join(imports) + "\n" + code
-    return code
-
 def _strip_fences(code: str) -> str:
     # Remove any ``` fences
     code = re.sub(r"```(?:python)?", "", code)
@@ -106,8 +95,7 @@ def generate_manim_code(prompt: str, max_retries: int = 3) -> str:
     for attempt in range(1, max_retries + 1):
         logger.info(f"Generation attempt {attempt}/{max_retries}")
         try:
-            client = get_client()
-            resp = client.chat.completions.create(
+            resp = get_client().chat.completions.create(
                 model=MODEL_NAME,
                 messages=[
                     {"role": "system",  "content": SYSTEM},
@@ -120,7 +108,6 @@ def generate_manim_code(prompt: str, max_retries: int = 3) -> str:
             raw = resp.choices[0].message.content
             code = _strip_fences(raw)
             code = sanitize_common_errors(code)
-            code = inject_missing_imports(code)
             validator.validate_structure(code)
             validator.validate_syntax(code)
             return code
@@ -138,7 +125,7 @@ def generate_manim_code_with_fallback(prompt: str) -> str:
         return generate_manim_code(prompt)
     except Exception as e:
         logger.error(f"Primary generation failed, using fallback: {e}")
-        # Minimal self-contained fallback
+        # Minimal self-contained fallback snippet
         return (
             "from manim import *\n"
             "import numpy as np\n\n"
