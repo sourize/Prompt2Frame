@@ -108,8 +108,21 @@ def generate_manim_code(prompt: str, max_retries: int = 3) -> str:
                 top_p=0.9,
             )
             code = resp.choices[0].message.content
+            logger.debug(f"Raw model output:\n{code}")  # Add debug logging
+            
+            # Log the first few lines to see what we're getting
+            logger.info("First 10 lines of raw output:")
+            for i, line in enumerate(code.splitlines()[:10]):
+                logger.info(f"Line {i+1}: {repr(line)}")  # Use repr to see whitespace
+            
             code = _strip_fences(code)
             code = sanitize_deprecated_methods(code)
+            
+            # Log the processed code
+            logger.info("First 10 lines after processing:")
+            for i, line in enumerate(code.splitlines()[:10]):
+                logger.info(f"Line {i+1}: {repr(line)}")  # Use repr to see whitespace
+            
             validator.validate_structure(code)
             validator.validate_syntax(code)
             return code
