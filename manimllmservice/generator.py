@@ -18,7 +18,7 @@ logger.addHandler(handler)
 
 # ─── Configuration ────────────────────────────────────────────────────────────
 load_dotenv()
-MODEL_NAME = "deepseek-r1-distill-llama-70b"
+MODEL_NAME = "qwen-qwq-32b"
 
 SYSTEM_FILE = os.getenv("SYSTEM_PROMPT_PATH", "Generator_System_Prompt.txt")
 try:
