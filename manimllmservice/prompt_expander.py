@@ -17,7 +17,7 @@ if not API_KEY:
     raise RuntimeError("Please set GROQ_API_KEY in your environment")
 
 client = groq.Client(api_key=API_KEY)
-MODEL_NAME = "qwen-qwq-32b"
+MODEL_NAME = "llama-3.1-8b-instant"
 
 SYSTEM = (
     "You are an expert 2D animation prompt enhancer. "

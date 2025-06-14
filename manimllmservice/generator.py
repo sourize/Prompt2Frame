@@ -18,7 +18,7 @@ logger.addHandler(handler)
 
 # ─── Configuration ────────────────────────────────────────────────────────────
 load_dotenv()
-MODEL_NAME = "qwen-qwq-32b"
+MODEL_NAME = "llama-3.1-8b-instant"
 
 SYSTEM_FILE = os.getenv("SYSTEM_PROMPT_PATH", "Generator_System_Prompt.txt")
 try:
