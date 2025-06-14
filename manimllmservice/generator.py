@@ -8,14 +8,13 @@ from typing import Optional
 
 import groq
 from dotenv import load_dotenv
-from manim import *  # Core animations, transforms, easing functions
 
-# Configure logger
-total_logger = logging.getLogger(__name__)
-total_logger.setLevel(logging.INFO)
+# Configure module‑level logger
+logger = logging.getLogger(__name__)
+logger.setLevel(logging.INFO)
 handler = logging.StreamHandler()
 handler.setFormatter(logging.Formatter("%(asctime)s - %(levelname)s - %(message)s"))
-total_logger.addHandler(handler)
+logger.addHandler(handler)
 
 load_dotenv()
 
@@ -23,13 +22,14 @@ MODEL_NAME = "meta-llama/llama-4-scout-17b-16e-instruct"
 
 SYSTEM = (
     "You are a world-class, deterministic 2D Manim v0.17.3+ code generator. "
-    "Your output must be fully self-contained Python code with precise imports, consistent indentation, and no syntax errors. "
-    "Begin by listing only necessary imports (e.g., `from manim import *`, `import numpy as np`). "
-    "Define exactly one subclass of `Scene` named descriptively based on the prompt. "
-    "All animations must be wrapped in `self.play(...)` calls with explicit transforms and easing functions. "
-    "Ensure any `fade_in`, `fade_out`, or similar methods are converted to `self.play(FadeIn/Out(...))` with `run_time` and `rate_func`. "
+    "Your response must be a single Python code snippet as plain text (no markdown), "
+    "which itself includes all necessary imports (e.g. `from manim import *`, `import numpy as np`). "
+    "Do NOT include any imports in this service layer—only emit the snippet string. "
+    "Define exactly one subclass of `Scene`, named descriptively based on the prompt. "
+    "Wrap every animation in `self.play(...)` calls with explicit transforms, run_time, and rate_func (easing). "
+    "Convert any `.fade_in()` or `.fade_out()` to `self.play(FadeIn/Out(...), run_time=…, rate_func=…)`. "
     "At the end of `construct`, include `self.wait(1)`. "
-    "Use clear variable names, proper spacing, and adhere to PEP8."
+    "Use clear variable names, consistent 4‑space indentation, and adhere to PEP8."
 )
 
 _client: Optional[groq.Client] = None
@@ -52,39 +52,53 @@ class CodeValidator:
         try:
             ast.parse(code)
         except SyntaxError as e:
-            raise RuntimeError(f"Syntax error: {e}")
+            raise RuntimeError(f"Syntax error in generated code: {e}")
 
     @staticmethod
     def validate_structure(code: str):
-        if not code.startswith("from manim import *"):
-            raise RuntimeError("Code must start with 'from manim import *'")
-        if "import numpy as np" not in code:
-            raise RuntimeError("Missing 'import numpy as np' import")
-        scenes = [ln for ln in code.splitlines() if ln.strip().startswith("class ")]
-        if len(scenes) != 1:
-            raise RuntimeError("Expected exactly one Scene subclass")
+        # Must import Manim at snippet-level
+        if "from manim import *" not in code:
+            raise RuntimeError("Generated snippet missing `from manim import *`")
+        # Must define exactly one Scene subclass
+        scene_classes = [ln for ln in code.splitlines() if ln.strip().startswith("class ") and "(Scene)" in ln]
+        if len(scene_classes) != 1:
+            raise RuntimeError("Expected exactly one subclass of Scene in snippet")
 
-# Common sanitization patterns
 def sanitize_common_errors(code: str) -> str:
-    # Replace `.fade_out()` calls
-    code = re.sub(r"(\w+)\.fade_out\(\)", r"self.play(FadeOut(\1), run_time=1, rate_func=linear)", code)
-    code = re.sub(r"(\w+)\.fade_in\(\)", r"self.play(FadeIn(\1), run_time=1, rate_func=linear)", code)
+    """
+    Auto-fix fade_in/fade_out usage by converting method calls into self.play(...) transforms.
+    """
+    # .fade_out() → self.play(FadeOut(obj), run_time=1, rate_func=linear)
+    code = re.sub(
+        r"(\w+)\.fade_out\(\)",
+        r"self.play(FadeOut(\1), run_time=1, rate_func=linear)",
+        code
+    )
+    code = re.sub(
+        r"(\w+)\.fade_in\(\)",
+        r"self.play(FadeIn(\1), run_time=1, rate_func=linear)",
+        code
+    )
     return code
 
 def _strip_fences(code: str) -> str:
+    # Remove any ``` fences the LLM might include
     code = re.sub(r"```(?:python)?", "", code)
     return "\n".join(line.rstrip() for line in code.splitlines())
 
 def generate_manim_code(prompt: str, max_retries: int = 3) -> str:
     validator = CodeValidator()
     for attempt in range(1, max_retries + 1):
-        total_logger.info(f"Generation attempt {attempt}/{max_retries}")
+        logger.info(f"Code generation attempt {attempt}/{max_retries}")
         try:
             client = get_client()
             resp = client.chat.completions.create(
                 model=MODEL_NAME,
-                messages=[{"role": "system", "content": SYSTEM}, {"role": "user", "content": prompt}],
-                temperature=0.2 + 0.1*(attempt-1),
+                messages=[
+                    {"role": "system", "content": SYSTEM},
+                    {"role": "user",   "content": prompt}
+                ],
+                temperature=0.2 + 0.1 * (attempt - 1),
                 max_tokens=1500,
                 top_p=0.9,
             )
@@ -94,19 +108,21 @@ def generate_manim_code(prompt: str, max_retries: int = 3) -> str:
             validator.validate_structure(code)
             validator.validate_syntax(code)
             return code
+
         except Exception as e:
-            total_logger.warning(f"Attempt {attempt} failed: {e}")
+            logger.warning(f"Attempt {attempt} failed: {e}")
             if attempt == max_retries:
-                raise RuntimeError(f"All attempts failed: {e}")
+                raise RuntimeError(f"All generation attempts failed: {e}")
             time.sleep(1)
+
     raise RuntimeError("Unexpected failure in generate_manim_code")
 
 def generate_manim_code_with_fallback(prompt: str) -> str:
     try:
         return generate_manim_code(prompt)
     except Exception as e:
-        total_logger.error(f"Primary generation failed: {e}")
-        # minimal fallback
+        logger.error(f"Primary generation failed, using fallback: {e}")
+        # Fallback emits a minimal self-contained snippet
         return (
             "from manim import *\n"
             "import numpy as np\n\n"
