@@ -18,7 +18,7 @@ logger.addHandler(handler)
 
 # ─── Configuration ────────────────────────────────────────────────────────────
 load_dotenv()
-MODEL_NAME = "meta-llama/llama-4-scout-17b-16e-instruct"
+MODEL_NAME = "deepseek-r1-distill-llama-70b"
 
 SYSTEM_FILE = os.getenv("SYSTEM_PROMPT_PATH", "Generator_System_Prompt.txt")
 try:
