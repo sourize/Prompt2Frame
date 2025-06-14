@@ -14,7 +14,7 @@ if not API_KEY:
     raise RuntimeError("Please set GROQ_API_KEY in your environment")
 
 client = groq.Client(api_key=API_KEY)
-MODEL_NAME = "gemma2-9b-it"
+MODEL_NAME = "llama-4-scout-17b-16e-instruct"
 
 # Enhanced system prompt for better prompt expansion
 SYSTEM = (
