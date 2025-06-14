@@ -8,14 +8,14 @@ from typing import Optional
 
 import groq
 from dotenv import load_dotenv
-from manim import FadeOut, FadeIn, Scene, Circle
+from manim import *  # Core animations, transforms, easing functions
 
 # Configure logger
-logger = logging.getLogger(__name__)
-logger.setLevel(logging.INFO)
+total_logger = logging.getLogger(__name__)
+total_logger.setLevel(logging.INFO)
 handler = logging.StreamHandler()
 handler.setFormatter(logging.Formatter("%(asctime)s - %(levelname)s - %(message)s"))
-logger.addHandler(handler)
+total_logger.addHandler(handler)
 
 load_dotenv()
 
@@ -60,18 +60,15 @@ class CodeValidator:
             raise RuntimeError("Code must start with 'from manim import *'")
         if "import numpy as np" not in code:
             raise RuntimeError("Missing 'import numpy as np' import")
-        if code.count("class ") != 1 or "Scene" not in code:
+        scenes = [ln for ln in code.splitlines() if ln.strip().startswith("class ")]
+        if len(scenes) != 1:
             raise RuntimeError("Expected exactly one Scene subclass")
 
 # Common sanitization patterns
 def sanitize_common_errors(code: str) -> str:
-    # Replace .fade_out() calls with self.play(FadeOut(obj), run_time=1)
-    code = re.sub(r"(\w+)\.fade_out\(\)", r"self.play(FadeOut(\1), run_time=1)", code)
-    code = re.sub(r"(\w+)\.fade_in\(\)", r"self.play(FadeIn(\1), run_time=1)", code)
-    # Ensure easing functions are imported
-    if "ease_in_out" in code.lower() and "ease_in_out" not in code:
-        # Already imported via *
-        pass
+    # Replace `.fade_out()` calls
+    code = re.sub(r"(\w+)\.fade_out\(\)", r"self.play(FadeOut(\1), run_time=1, rate_func=linear)", code)
+    code = re.sub(r"(\w+)\.fade_in\(\)", r"self.play(FadeIn(\1), run_time=1, rate_func=linear)", code)
     return code
 
 def _strip_fences(code: str) -> str:
@@ -81,7 +78,7 @@ def _strip_fences(code: str) -> str:
 def generate_manim_code(prompt: str, max_retries: int = 3) -> str:
     validator = CodeValidator()
     for attempt in range(1, max_retries + 1):
-        logger.info(f"Generation attempt {attempt}/{max_retries}")
+        total_logger.info(f"Generation attempt {attempt}/{max_retries}")
         try:
             client = get_client()
             resp = client.chat.completions.create(
@@ -98,7 +95,7 @@ def generate_manim_code(prompt: str, max_retries: int = 3) -> str:
             validator.validate_syntax(code)
             return code
         except Exception as e:
-            logger.warning(f"Attempt {attempt} failed: {e}")
+            total_logger.warning(f"Attempt {attempt} failed: {e}")
             if attempt == max_retries:
                 raise RuntimeError(f"All attempts failed: {e}")
             time.sleep(1)
@@ -108,7 +105,7 @@ def generate_manim_code_with_fallback(prompt: str) -> str:
     try:
         return generate_manim_code(prompt)
     except Exception as e:
-        logger.error(f"Primary generation failed: {e}")
+        total_logger.error(f"Primary generation failed: {e}")
         # minimal fallback
         return (
             "from manim import *\n"
