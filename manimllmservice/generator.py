@@ -67,10 +67,47 @@ class CodeValidator:
             raise RuntimeError("Expected exactly one subclass of Scene in snippet")
 
 # ─── Sanitization ────────────────────────────────────────────────────────────
+def _fix_indentation(code: str) -> str:
+    """Fix indentation in the code to use exactly 4 spaces."""
+    lines = code.splitlines()
+    fixed_lines = []
+    in_class = False
+    in_method = False
+    
+    for line in lines:
+        stripped = line.lstrip()
+        if not stripped:  # Empty line
+            fixed_lines.append("")
+            continue
+            
+        # Count leading spaces
+        leading_spaces = len(line) - len(line.lstrip())
+        
+        # Determine correct indentation level
+        if line.strip().startswith("class "):
+            in_class = True
+            in_method = False
+            fixed_lines.append(stripped)  # Class definition at root level
+        elif line.strip().startswith("def "):
+            in_method = True
+            fixed_lines.append("    " + stripped)  # Method definition indented 4 spaces
+        elif in_method:
+            if stripped.startswith("return ") or stripped.startswith("pass"):
+                fixed_lines.append("    " + stripped)  # Return/pass at method level
+            else:
+                fixed_lines.append("        " + stripped)  # Method body indented 8 spaces
+        elif in_class:
+            fixed_lines.append("    " + stripped)  # Class body indented 4 spaces
+        else:
+            fixed_lines.append(stripped)  # Root level (imports, etc.)
+            
+    return "\n".join(fixed_lines)
+
 def _strip_fences(code: str) -> str:
-    # Remove any ``` fences
+    # Remove any ``` fences and fix indentation
     code = re.sub(r"```(?:python)?", "", code)
-    return "\n".join(line.rstrip() for line in code.splitlines())
+    code = "\n".join(line.rstrip() for line in code.splitlines())
+    return _fix_indentation(code)
 
 def sanitize_deprecated_methods(code: str) -> str:
     """
@@ -108,20 +145,20 @@ def generate_manim_code(prompt: str, max_retries: int = 3) -> str:
                 top_p=0.9,
             )
             code = resp.choices[0].message.content
-            logger.debug(f"Raw model output:\n{code}")  # Add debug logging
+            logger.debug(f"Raw model output:\n{code}")
             
             # Log the first few lines to see what we're getting
             logger.info("First 10 lines of raw output:")
             for i, line in enumerate(code.splitlines()[:10]):
-                logger.info(f"Line {i+1}: {repr(line)}")  # Use repr to see whitespace
+                logger.info(f"Line {i+1}: {repr(line)}")
             
-            code = _strip_fences(code)
+            code = _strip_fences(code)  # This now includes indentation fixing
             code = sanitize_deprecated_methods(code)
             
             # Log the processed code
             logger.info("First 10 lines after processing:")
             for i, line in enumerate(code.splitlines()[:10]):
-                logger.info(f"Line {i+1}: {repr(line)}")  # Use repr to see whitespace
+                logger.info(f"Line {i+1}: {repr(line)}")
             
             validator.validate_structure(code)
             validator.validate_syntax(code)
