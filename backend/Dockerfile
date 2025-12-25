@@ -71,14 +71,14 @@ ENV PYTHONUNBUFFERED=1
 # ────────────────────────────────────────────────────────────────────────────
 # 11) Expose port 8000 (platform will override $PORT if provided)
 # ────────────────────────────────────────────────────────────────────────────
-EXPOSE 8000
+EXPOSE 7860
 
 # ────────────────────────────────────────────────────────────────────────────
 # 12) Final command (shell‐form) so $PORT expands at runtime
 # ────────────────────────────────────────────────────────────────────────────
 CMD sh -c "uvicorn src.app:app \
     --host 0.0.0.0 \
-    --port ${PORT:-8000} \
+    --port ${PORT:-7860} \
     --workers 1 \
     --proxy-headers \
     --forwarded-allow-ips='*' \

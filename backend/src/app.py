@@ -127,6 +127,21 @@ View detailed API documentation below.
 # ------------------------------------------------------------
 # Configure CORS with environment-based origins
 # ------------------------------------------------------------
+# ------------------------------------------------------------
+# Root endpoint for easy verification
+# ------------------------------------------------------------
+@app.get("/")
+async def root():
+    """Simple status check."""
+    return {
+        "status": "online",
+        "service": "Prompt2Frame Backend",
+        "documentation": "/docs"
+    }
+
+# ------------------------------------------------------------
+# Configure CORS with environment-based origins
+# ------------------------------------------------------------
 app.add_middleware(
     CORSMiddleware,
     allow_origins=[
@@ -154,8 +169,7 @@ class SecurityHeadersMiddleware(BaseHTTPMiddleware):
         # Prevent MIME-sniffing attacks
         response.headers["X-Content-Type-Options"] = "nosniff"
         
-        # Prevent clickjacking attacks
-        response.headers["X-Frame-Options"] = "DENY"
+        # Note: X-Frame-Options removed to allow embedding in Hugging Face Spaces iframe
         
         # Enable XSS protection (legacy browsers)
         response.headers["X-XSS-Protection"] = "1; mode=block"
@@ -178,13 +192,13 @@ class EnhancedResourceGuard(BaseHTTPMiddleware):
         super().__init__(app)
         self.last_check = 0
         self.cooldown = 5  # seconds between CPU checks
-        self.cpu_threshold = 95
-        self.memory_threshold = 90
+        self.cpu_threshold = 98
+        self.memory_threshold = 99  # Relaxed for cloud containers (often report host memory)
         self.max_concurrent = 2
 
     async def dispatch(self, request: Request, call_next):
         # Skip health and metrics endpoints and OPTIONS
-        if request.url.path in ["/health", "/metrics"] or request.method == "OPTIONS":
+        if request.url.path in ["/", "/health", "/metrics"] or request.method == "OPTIONS":
             return await call_next(request)
 
         start_time = time.time()

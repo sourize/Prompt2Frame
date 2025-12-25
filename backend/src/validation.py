@@ -129,7 +129,7 @@ class CodeSecurityValidator:
     # Comprehensive list of dangerous operations
     DANGEROUS_OPERATIONS = [
         # File I/O
-        'open', 'file', 'read', 'write', 'with open',
+        'open(', 'file(', 'with open',
         
         # OS operations  
         'os.', 'sys.', 'subprocess.', 'shutil.', 'pathlib.',
@@ -238,16 +238,16 @@ class CodeSecurityValidator:
         metrics = cls.analyze_code_complexity(code)
         
         # Check limits
-        if metrics['object_count'] > 20:
-            return False, "Too many objects (limit: 20)"
+        if metrics['object_count'] > 30:
+            return False, "Too many objects (limit: 30)"
         
-        if metrics['animation_count'] > 15:
-            return False, "Too many animations (limit: 15)"
+        if metrics['animation_count'] > 30:
+            return False, "Too many animations (limit: 30)"
         
-        if metrics['loop_count'] > 3:
-            return False, "Too many loops (limit: 3)"
+        if metrics['loop_count'] > 10:
+            return False, "Too many loops (limit: 10)"
         
-        if metrics['function_count'] > 5:
-            return False, "Too many function definitions (limit: 5)"
+        if metrics['function_count'] > 10:
+            return False, "Too many function definitions (limit: 10)"
         
         return True, ""
