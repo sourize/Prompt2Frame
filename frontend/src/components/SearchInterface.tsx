@@ -1,5 +1,5 @@
 import React, { useState, useRef } from 'react';
-import { motion } from 'framer-motion';
+import { motion, AnimatePresence } from 'framer-motion';
 import axios from 'axios';
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
@@ -12,16 +12,13 @@ import {
   Play,
   Video,
   AlertCircle,
-  Paperclip,
-  Mic,
-  Camera,
-  Search,
-  Globe
+  Sparkles,
+  Zap,
+  Circle
 } from "lucide-react";
-import SuggestedQuestions from "./SuggestedQuestions";
 
-// Point this at your deployed LLM service (Project 1)
-const LLM_SERVICE_URL = 'https://manim-llm-service.onrender.com';
+// Point this at your backend (Monolithic)
+const BACKEND_URL = import.meta.env.VITE_BACKEND_URL || 'http://localhost:5000';
 
 const SearchInterface = ({ loading, setLoading }: { loading: boolean; setLoading: (val: boolean) => void }) => {
   const [prompt, setPrompt] = useState('');
@@ -32,18 +29,18 @@ const SearchInterface = ({ loading, setLoading }: { loading: boolean; setLoading
 
   // Loading steps with their descriptions
   const loadingSteps = [
-    "Analyzing your prompt...",
-    "Generating animation code...",
-    "Rendering your animation...",
-    "Finalizing the video..."
+    "🔍 Analyzing your prompt...",
+    "🤖 Generating animation code...",
+    "🎬 Rendering your animation...",
+    "✨ Finalizing the video..."
   ];
 
   // Tips to show during loading
   const loadingTips = [
-    "Tip: Keep prompts concise for faster generation",
-    "Tip: Simple geometric shapes render faster",
-    "Tip: You can create multiple animations in one prompt",
-    "Tip: Try adding color transitions for more dynamic results"
+    "💡 Tip: Simple geometric shapes render faster",
+    "✨ Tip: Try adding color transitions for dynamic results",
+    "🎨 Tip: Describe motion and transformations clearly",
+    "⚡ Tip: Shorter prompts usually work best"
   ];
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -67,17 +64,16 @@ const SearchInterface = ({ loading, setLoading }: { loading: boolean; setLoading
     // Start the loading steps animation
     const stepInterval = setInterval(() => {
       setLoadingStep(prev => (prev + 1) % loadingSteps.length);
-    }, 15000); // Change step every 15 seconds
+    }, 4000); // Change step every 4 seconds
 
     try {
       toast({
-        title: "Generating animation",
-        description: "This may take a minute...",
+        title: "✨ Generating animation",
+        description: "This may take a moment...",
       });
 
-      // POST to the /generate-code endpoint on the LLM service with quality hardcoded to "m"
       const response = await axios.post(
-        `${LLM_SERVICE_URL}/generate-code`,
+        `${BACKEND_URL}/generate`,
         {
           prompt,
           quality: 'm',
@@ -85,24 +81,24 @@ const SearchInterface = ({ loading, setLoading }: { loading: boolean; setLoading
         }
       );
 
-      clearInterval(stepInterval); // Clear the interval when done
+      clearInterval(stepInterval);
 
       const returnedUrl: string = response.data.videoUrl;
-      const fullUrl = returnedUrl + `?t=${Date.now()}`; // cache-bust
+      const fullUrl = `${BACKEND_URL}${returnedUrl}?t=${Date.now()}`;
       console.log('Video URL:', fullUrl);
       setVideoUrl(fullUrl);
 
       toast({
-        title: "Success!",
-        description: "Your animation has been generated successfully.",
+        title: "🎉 Success!",
+        description: "Your animation is ready!",
       });
     } catch (err: any) {
-      clearInterval(stepInterval); // Clear the interval on error
+      clearInterval(stepInterval);
       console.error('Error:', err);
-      setError(err.response?.data?.error || 'Failed to generate animation. Please try again.');
+      setError(err.response?.data?.detail?.message || err.response?.data?.detail || 'Failed to generate animation. Please try again.');
       toast({
         title: "Generation failed",
-        description: err.response?.data?.error || 'Failed to generate animation. Please try again.',
+        description: err.response?.data?.detail?.message || 'Failed to generate animation',
         variant: "destructive",
       });
     } finally {
@@ -114,7 +110,7 @@ const SearchInterface = ({ loading, setLoading }: { loading: boolean; setLoading
     console.error('Video error:', e);
     setError('Failed to load video. Please try again.');
   };
-  
+
   const handleDownload = () => {
     if (videoUrl) {
       const link = document.createElement('a');
@@ -124,299 +120,272 @@ const SearchInterface = ({ loading, setLoading }: { loading: boolean; setLoading
       link.click();
       document.body.removeChild(link);
       toast({
-        title: "Download started",
+        title: "📥 Download started",
         description: "Your animation is being downloaded.",
       });
     }
   };
 
-  const handleSuggestionClick = (suggestion: string) => {
-    setPrompt(suggestion);
-  };
+  const examplePrompts = [
+    "Draw a red circle and transform it into a square",
+    "Create a bouncing ball that changes colors",
+    "Animate a growing neural network visualization",
+    "Make a simple pendulum swinging motion"
+  ];
 
   return (
-    <div className="flex flex-col items-center justify-center min-h-screen px-6">
-      <div className="w-full max-w-2xl mx-auto space-y-8">
-        
-        {/* Header Section */}
+    <div className="relative flex flex-col items-center justify-center min-h-screen px-4 sm:px-6 py-8 sm:py-12">
+      <div className="w-full max-w-3xl mx-auto space-y-6 sm:space-y-8 relative z-10">
+
+        {/* Header Section with Premium Styling */}
         <motion.div
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.6 }}
-          className="text-center"
+          transition={{ duration: 0.8, ease: [0.16, 1, 0.3, 1] }}
+          className="text-center space-y-3 sm:space-y-4"
         >
-          <h1 className="text-4xl font-bold text-white mb-2">Prompt2Frame</h1>
-          <p className="text-gray-400 text-lg mb-8">Turn prompts into animations</p>
+          <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full bg-gradient-to-r from-indigo-500/10 to-purple-500/10 border border-indigo-500/20 mb-3 sm:mb-4">
+            <Sparkles className="w-3.5 h-3.5 text-indigo-400" />
+            <span className="text-xs text-gray-300 font-medium">AI-Powered Animation</span>
+          </div>
+
+          <h1 className="text-3xl sm:text-4xl md:text-5xl font-bold mb-2 sm:mb-3 px-4">
+            <span className="gradient-text">Prompt2Frame</span>
+          </h1>
+
+          <p className="text-gray-100 text-sm sm:text-base max-w-xl mx-auto leading-relaxed px-4">
+            Turn your ideas into stunning 2D animations with AI
+          </p>
         </motion.div>
 
-        {/* Centered Search Input */}
+        {/* Premium Search Input */}
         <motion.div
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.6, delay: 0.1 }}
+          transition={{ duration: 0.8, delay: 0.1, ease: [0.16, 1, 0.3, 1] }}
           className="w-full"
         >
-          <form onSubmit={handleSubmit} className="w-full space-y-4">
-            <div className="relative bg-gray-800/90 rounded-xl border border-gray-700/50 backdrop-blur-sm hover:border-gray-600/50 transition-all duration-200">
-              <Textarea
-                value={prompt}
-                onChange={(e) => setPrompt(e.target.value)}
-                placeholder="Ask a question..."
-                className="w-full bg-transparent border-0 text-white placeholder-gray-400 resize-none px-6 py-4 pr-16 text-base leading-relaxed focus:ring-0 focus:outline-none min-h-[60px] rounded-xl overflow-y-auto"
-                rows={1}
-                style={{
-                  minHeight: '60px',
-                  maxHeight: '200px',
-                  height: 'auto',
-                  lineHeight: '1.5',
-                }}
-                onInput={(e) => {
-                  const target = e.target as HTMLTextAreaElement;
-                  target.style.height = '60px';
-                  const newHeight = Math.min(target.scrollHeight, 200);
-                  target.style.height = `${newHeight}px`;
-                  // Ensure cursor is visible
-                  if (target.selectionStart === target.value.length) {
-                    target.scrollTop = target.scrollHeight;
-                  }
-                }}
-              />
+          <form onSubmit={handleSubmit} className="w-full">
+            <div className="relative glass-card rounded-xl p-0.5 smooth-hover">
+              <div className="relative bg-gray-900/50 rounded-xl">
+                <Textarea
+                  value={prompt}
+                  onChange={(e) => setPrompt(e.target.value)}
+                  placeholder="Describe the animation you want to create..."
+                  className="w-full bg-transparent border-0 text-white placeholder-gray-400 resize-none px-4 sm:px-5 py-3 sm:py-4 pr-12 sm:pr-14 text-sm leading-relaxed focus:ring-0 focus:outline-none min-h-[60px] rounded-xl"
+                  rows={1}
+                  style={{
+                    minHeight: '60px',
+                    maxHeight: '180px',
+                    height: 'auto',
+                  }}
+                  onInput={(e) => {
+                    const target = e.target as HTMLTextAreaElement;
+                    target.style.height = '60px';
+                    const newHeight = Math.min(target.scrollHeight, 180);
+                    target.style.height = `${newHeight}px`;
+                  }}
+                />
 
-              {/* Submit button */}
-              <div className="absolute right-3 bottom-3">
-                <Button
-                  type="submit"
-                  disabled={loading || !prompt.trim()}
-                  className="h-8 w-8 p-0 bg-gray-600/80 text-white hover:bg-gray-500/80 rounded-lg disabled:opacity-50 disabled:cursor-not-allowed"
-                >
-                  {loading ? (
-                    <svg className="animate-spin h-4 w-4" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                    </svg>
-                  ) : (
-                    <ArrowRight className="h-4 w-4" />
-                  )}
-                </Button>
+                {/* Submit button - larger touch target on mobile */}
+                <div className="absolute right-2 sm:right-3 bottom-2 sm:bottom-3">
+                  <Button
+                    type="submit"
+                    disabled={loading || !prompt.trim()}
+                    className="h-10 w-10 sm:h-9 sm:w-9 p-0 bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-500 hover:to-purple-500 text-white rounded-lg disabled:opacity-50 disabled:cursor-not-allowed shadow-md transition-all duration-200 active:scale-95"
+                  >
+                    {loading ? (
+                      <motion.div
+                        animate={{ rotate: 360 }}
+                        transition={{ repeat: Infinity, duration: 1, ease: "linear" }}
+                      >
+                        <Circle className="h-5 w-5" />
+                      </motion.div>
+                    ) : (
+                      <ArrowRight className="h-5 w-5" />
+                    )}
+                  </Button>
+                </div>
               </div>
             </div>
           </form>
         </motion.div>
 
-        {/* Suggested Questions with animation examples */}
-        <motion.div
-          initial={{ opacity: 0, y: 20 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.6, delay: 0.2 }}
-          className="w-full space-y-3"
-        >
-          <div 
-            className="flex items-center gap-2 text-gray-400 hover:text-gray-300 transition-colors cursor-pointer group"
-            onClick={() => {
-              setPrompt("Draw a red circle and transform it into a square");
-              // Focus the textarea after setting the prompt
-              const textarea = document.querySelector('textarea');
-              if (textarea) {
-                textarea.focus();
-              }
-            }}
-          >
-            <ArrowRight className="w-4 h-4 group-hover:translate-x-1 transition-transform" />
-            <Video className="w-4 h-4" />
-            <span className="text-sm">Draw a red circle and transform it into a square</span>
-          </div>
-          <div 
-            className="flex items-center gap-2 text-gray-400 hover:text-gray-300 transition-colors cursor-pointer group"
-            onClick={() => {
-              setPrompt("Create a bouncing ball that changes colors");
-              const textarea = document.querySelector('textarea');
-              if (textarea) {
-                textarea.focus();
-              }
-            }}
-          >
-            <ArrowRight className="w-4 h-4 group-hover:translate-x-1 transition-transform" />
-            <Video className="w-4 h-4" />
-            <span className="text-sm">Create a bouncing ball that changes colors</span>
-          </div>
-          <div 
-            className="flex items-center gap-2 text-gray-400 hover:text-gray-300 transition-colors cursor-pointer group"
-            onClick={() => {
-              setPrompt("Animate a growing neural network visualization");
-              const textarea = document.querySelector('textarea');
-              if (textarea) {
-                textarea.focus();
-              }
-            }}
-          >
-            <ArrowRight className="w-4 h-4 group-hover:translate-x-1 transition-transform" />
-            <Video className="w-4 h-4" />
-            <span className="text-sm">Animate a growing neural network visualization</span>
-          </div>
-          <div 
-            className="flex items-center gap-2 text-gray-400 hover:text-gray-300 transition-colors cursor-pointer group"
-            onClick={() => {
-              setPrompt("Make a simple pendulum swinging motion");
-              const textarea = document.querySelector('textarea');
-              if (textarea) {
-                textarea.focus();
-              }
-            }}
-          >
-            <ArrowRight className="w-4 h-4 group-hover:translate-x-1 transition-transform" />
-            <Video className="w-4 h-4" />
-            <span className="text-sm">Make a simple pendulum swinging motion</span>
-          </div>
-        </motion.div>
-
-        {/* Video Output Section - Only show when there's content */}
-        {(videoUrl || error || loading) && (
+        {/* Enhanced Example Prompts - responsive grid */}
+        {!videoUrl && !loading && (
           <motion.div
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.6 }}
-            className="w-full"
+            transition={{ duration: 0.8, delay: 0.2, ease: [0.16, 1, 0.3, 1] }}
+            className="space-y-2 sm:space-y-3"
           >
-            <Card className="bg-gray-800/50 border-gray-700/50 backdrop-blur-sm">
-              <CardContent className="p-6">
-                <div className="flex items-center gap-3 mb-4">
-                  <div className="w-8 h-8 bg-gradient-to-tr from-blue-500 to-purple-600 rounded-full flex items-center justify-center">
-                    <Video className="w-4 h-4 text-white" />
+            <p className="text-xs uppercase tracking-wide text-gray-400 font-medium mb-2">Try these examples</p>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+              {examplePrompts.map((example, index) => (
+                <motion.button
+                  key={index}
+                  onClick={() => setPrompt(example)}
+                  className="group glass-card rounded-lg p-3 text-left smooth-hover active:scale-98 touch-manipulation"
+                  whileHover={{ scale: 1.02 }}
+                  whileTap={{ scale: 0.98 }}
+                >
+                  <div className="flex items-start gap-2.5">
+                    <Zap className="w-3.5 h-3.5 text-indigo-300 mt-0.5 flex-shrink-0" />
+                    <span className="text-xs text-gray-100 leading-relaxed">{example}</span>
                   </div>
-                  <div>
-                    <h3 className="text-white font-medium">Animation Output</h3>
-                    <p className="text-gray-400 text-sm">
-                      {videoUrl 
-                        ? "Your generated animation is ready to view"
-                        : loading 
-                        ? "Generating your animation..."
-                        : "Generation failed"}
-                    </p>
-                  </div>
-                </div>
-
-                {error && (
-                  <div className="p-4 mb-4 rounded-lg bg-red-500/10 border border-red-500/30">
-                    <div className="flex items-start gap-3">
-                      <AlertCircle size={20} className="text-red-400 mt-0.5 flex-shrink-0" />
-                      <div className="space-y-2">
-                        <p className="text-red-400 font-medium">Generation Failed</p>
-                        <p className="text-sm text-gray-300">{error}</p>
-                        <div className="space-y-2">
-                          <div className="p-3 rounded-lg bg-amber-500/10 border border-amber-500/30">
-                            <p className="text-xs text-gray-300">
-                              <strong className="font-medium text-amber-400">Tip:</strong> The backend has limited capacity. Keep prompts concise and avoid complex requests. The system works best with simple geometric animations and basic transformations.
-                            </p>
-                          </div>
-                        </div>
-                        <Button 
-                          variant="outline" 
-                          size="sm" 
-                          className="mt-2 bg-gray-700/50 border-gray-600 text-gray-300 hover:bg-gray-600/50"
-                          onClick={() => window.location.reload()}
-                        >
-                          Refresh Page
-                        </Button>
-                      </div>
-                    </div>
-                  </div>
-                )}
-
-                <div className="rounded-lg overflow-hidden bg-black/20 border border-gray-700/50 min-h-[240px] flex items-center justify-center">
-                  {videoUrl ? (
-                    <video
-                      ref={videoRef}
-                      src={videoUrl}
-                      controls
-                      playsInline
-                      className="w-full rounded-lg"
-                      onError={handleVideoError}
-                      key={videoUrl}
-                      autoPlay={false}
-                      preload="auto"
-                    >
-                      <source src={videoUrl} type="video/mp4" />
-                      Your browser does not support the video tag.
-                    </video>
-                  ) : (
-                    <div className="text-gray-400 p-8 text-center">
-                      {loading ? (
-                        <div className="space-y-6">
-                          <motion.div
-                            animate={{ rotate: 360 }}
-                            transition={{ repeat: Infinity, duration: 2, ease: "linear" }}
-                            className="mx-auto mb-3 w-12 h-12 border-4 border-blue-500 border-t-transparent rounded-full"
-                          />
-                          <div className="space-y-4">
-                            <motion.div
-                              initial={{ opacity: 0, y: 10 }}
-                              animate={{ opacity: 1, y: 0 }}
-                              transition={{ duration: 0.5 }}
-                              className="text-lg font-medium text-white"
-                            >
-                              {loadingSteps[loadingStep]}
-                            </motion.div>
-                            <motion.div
-                              initial={{ opacity: 0 }}
-                              animate={{ opacity: 1 }}
-                              transition={{ duration: 0.5, delay: 0.2 }}
-                              className="text-sm"
-                            >
-                              {loadingTips[loadingStep]}
-                            </motion.div>
-                            <div className="flex justify-center gap-2">
-                              {loadingSteps.map((_, index) => (
-                                <motion.div
-                                  key={index}
-                                  className={`w-2 h-2 rounded-full ${
-                                    index === loadingStep ? 'bg-blue-500' : 'bg-gray-600'
-                                  }`}
-                                  animate={{
-                                    scale: index === loadingStep ? 1.2 : 1,
-                                    opacity: index === loadingStep ? 1 : 0.5
-                                  }}
-                                  transition={{ duration: 0.3 }}
-                                />
-                              ))}
-                            </div>
-                          </div>
-                        </div>
-                      ) : (
-                        <>
-                          <Video size={40} className="mx-auto mb-3 text-gray-500" />
-                          <p>Your animation will appear here</p>
-                        </>
-                      )}
-                    </div>
-                  )}
-                </div>
-
-                {videoUrl && (
-                  <div className="flex justify-between mt-4 pt-4 border-t border-gray-700/50">
-                    <Button 
-                      variant="outline" 
-                      className="bg-gray-700/50 border-gray-600 text-gray-300 hover:bg-gray-600/50"
-                      onClick={() => {
-                        if (videoRef.current) {
-                          videoRef.current.currentTime = 0;
-                          videoRef.current.play();
-                        }
-                      }}
-                    >
-                      <Play size={16} className="mr-2" /> Replay
-                    </Button>
-                    <Button 
-                      className="bg-white text-black hover:bg-gray-200"
-                      onClick={handleDownload}
-                    >
-                      <Download size={16} className="mr-2" /> Download
-                    </Button>
-                  </div>
-                )}
-              </CardContent>
-            </Card>
+                </motion.button>
+              ))}
+            </div>
           </motion.div>
         )}
+
+        {/* Enhanced Video Output Section */}
+        <AnimatePresence>
+          {(videoUrl || error || loading) && (
+            <motion.div
+              initial={{ opacity: 0, y: 20 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -20 }}
+              transition={{ duration: 0.6 }}
+              className="w-full"
+            >
+              <Card className="glass-card border-0 overflow-hidden">
+                <CardContent className="p-4 sm:p-5 space-y-3 sm:space-y-4">
+                  {/* Header - responsive */}
+                  <div className="flex items-center gap-2 sm:gap-3">
+                    <div className="w-8 h-8 sm:w-9 sm:h-9 bg-gradient-to-tr from-indigo-500 to-purple-600 rounded-lg flex items-center justify-center flex-shrink-0">
+                      <Video className="w-4 h-4 text-white" />
+                    </div>
+                    <div className="min-w-0">
+                      <h3 className="text-white font-semibold text-sm sm:text-base truncate">Animation Output</h3>
+                      <p className="text-gray-300 text-xs truncate">
+                        {videoUrl ? "✨ Ready to view" : loading ? "⏳ Generating..." : "❌ Generation failed"}
+                      </p>
+                    </div>
+                  </div>
+
+                  {/* Error Display */}
+                  {error && (
+                    <motion.div
+                      initial={{ opacity: 0, scale: 0.95 }}
+                      animate={{ opacity: 1, scale: 1 }}
+                      className="p-4 rounded-xl bg-red-500/10 border border-red-500/20"
+                    >
+                      <div className="flex items-start gap-3">
+                        <AlertCircle size={20} className="text-red-400 mt-0.5 flex-shrink-0" />
+                        <div className="space-y-2">
+                          <p className="text-red-300 font-medium text-base">Generation Failed</p>
+                          <p className="text-sm text-gray-100">{error}</p>
+                        </div>
+                      </div>
+                    </motion.div>
+                  )}
+
+                  {/* Video Player or Loading - responsive */}
+                  <div className="rounded-lg overflow-hidden bg-black/40 border border-white/5 min-h-[240px] sm:min-h-[280px] flex items-center justify-center">
+                    {videoUrl ? (
+                      <div className="flex items-center justify-center w-full h-full">
+                        <video
+                          ref={videoRef}
+                          src={videoUrl}
+                          controls
+                          playsInline
+                          className="w-auto h-full max-w-full max-h-full rounded-lg mx-auto"
+                          onError={handleVideoError}
+                          key={videoUrl}
+                          autoPlay={false}
+                          preload="auto"
+                        >
+                          <source src={videoUrl} type="video/mp4" />
+                          Your browser does not support the video tag.
+                        </video>
+                      </div>
+                    ) : loading ? (
+                      <div className="text-center space-y-4 sm:space-y-5 p-6 sm:p-8">
+                        {/* Animated Loading Spinner - responsive */}
+                        <motion.div
+                          className="relative mx-auto w-12 h-12 sm:w-16 sm:h-16"
+                          animate={{ rotate: 360 }}
+                          transition={{ repeat: Infinity, duration: 2, ease: "linear" }}
+                        >
+                          <div className="absolute inset-0 border-4 border-indigo-500/30 rounded-full"></div>
+                          <div className="absolute inset-0 border-4 border-transparent border-t-indigo-500 rounded-full"></div>
+                        </motion.div>
+
+                        {/* Loading Text */}
+                        <div className="space-y-2">
+                          <motion.p
+                            key={loadingStep}
+                            initial={{ opacity: 0, y: 10 }}
+                            animate={{ opacity: 1, y: 0 }}
+                            exit={{ opacity: 0, y: -10 }}
+                            className="text-base font-medium text-white"
+                          >
+                            {loadingSteps[loadingStep]}
+                          </motion.p>
+
+                          <motion.p
+                            key={`tip-${loadingStep}`}
+                            initial={{ opacity: 0 }}
+                            animate={{ opacity: 1 }}
+                            className="text-xs text-gray-400"
+                          >
+                            {loadingTips[loadingStep]}
+                          </motion.p>
+
+                          {/* Progress Dots */}
+                          <div className="flex justify-center gap-1.5 pt-2">
+                            {loadingSteps.map((_, index) => (
+                              <motion.div
+                                key={index}
+                                className={`w-1.5 h-1.5 rounded-full ${index === loadingStep ? 'bg-indigo-500' : 'bg-gray-700'
+                                  }`}
+                                animate={{
+                                  scale: index === loadingStep ? 1.3 : 1,
+                                  opacity: index === loadingStep ? 1 : 0.5
+                                }}
+                                transition={{ duration: 0.3 }}
+                              />
+                            ))}
+                          </div>
+                        </div>
+                      </div>
+                    ) : (
+                      <div className="text-gray-500 text-center p-8">
+                        <Video size={48} className="mx-auto mb-3 opacity-50" />
+                        <p>Your animation will appear here</p>
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Action Buttons - responsive stack on mobile */}
+                  {videoUrl && (
+                    <div className="flex flex-col sm:flex-row gap-2 sm:gap-3 pt-2">
+                      <Button
+                        variant="ghost"
+                        className="flex-1 bg-white/5 hover:bg-white/10 text-gray-200 border border-white/10 min-h-[44px] touch-manipulation shadow-none"
+                        onClick={() => {
+                          if (videoRef.current) {
+                            videoRef.current.currentTime = 0;
+                            videoRef.current.play();
+                          }
+                        }}
+                      >
+                        <Play size={16} className="mr-2" /> Replay
+                      </Button>
+                      <Button
+                        className="flex-1 bg-[#2d3250] hover:bg-[#3d4260] text-white min-h-[44px] touch-manipulation shadow-none border border-white/5"
+                        onClick={handleDownload}
+                      >
+                        <Download size={16} className="mr-2" /> Download
+                      </Button>
+                    </div>
+                  )}
+                </CardContent>
+              </Card>
+            </motion.div>
+          )}
+        </AnimatePresence>
       </div>
     </div>
   );

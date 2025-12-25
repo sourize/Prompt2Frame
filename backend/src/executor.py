@@ -167,7 +167,8 @@ def _concatenate_videos(video_paths: List[Path], output_path: Path) -> None:
             for video_path in video_paths:
                 if not video_path.exists():
                     raise RenderError(f"Input video file not found: {video_path}")
-                f.write(f"file '{video_path.resolve()}'\n")
+                # Use as_posix() to ensure forward slashes, avoiding escape char issues on Windows
+                f.write(f"file '{video_path.resolve().as_posix()}'\n")
         
         # Try lossless concatenation first
         cmd = [

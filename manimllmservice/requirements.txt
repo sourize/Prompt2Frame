@@ -1,7 +1,0 @@
-fastapi
-uvicorn[standard]
-httpx
-groq
-python-dotenv
-numpy
-asyncio

@@ -5,6 +5,7 @@ from dotenv import load_dotenv
 import asyncio
 from typing import Optional
 import logging
+from .circuit_breaker import groq_circuit_breaker
 
 logger = logging.getLogger(__name__)
 
@@ -14,35 +15,70 @@ if not API_KEY:
     raise RuntimeError("Please set GROQ_API_KEY in your environment")
 
 client = groq.Client(api_key=API_KEY)
-MODEL_NAME = "llama3-70b-8192"
+MODEL_NAME = "llama-3.1-8b-instant"  # Fast model optimized for quick prompt expansion (560 tps)
 
-# Enhanced system prompt for better prompt expansion
+# Enhanced system prompt for robust prompt expansion
 SYSTEM = (
-    "You are a precise and creative assistant that transforms short user requests "
-    "into detailed, vivid, and actionable descriptions for 2D animation generation. "
+    "You are an expert prompt engineer specializing in transforming ANY user input—no matter how vague, "
+    "technical, or brief—into rich, detailed, and actionable descriptions for 2D mathematical animation generation. "
     
-    "Your task is to expand the user's prompt into exactly ONE comprehensive paragraph "
-    "that provides rich visual details, spatial relationships, timing, and creative elements "
-    "while staying true to the user's original intent. "
+    "Your role is to:\n"
+    "1. UNDERSTAND the user's intent, even if unclear or incomplete\n"
+    "2. EXPAND it into vivid visual descriptions with specific technical details\n"
+    "3. ENSURE the result is feasible for 2D programmatic animation (shapes, transformations, movements)\n"
     
-    "Guidelines for expansion:\n"
-    "- Transform abstract concepts into concrete visual elements\n"
-    "- Specify colors, shapes, movements, and spatial arrangements\n"
-    "- Include timing and sequencing details for animations\n"
-    "- Add creative flourishes that enhance the visual appeal\n"
-    "- Ensure the description is clear and unambiguous\n"
-    "- Keep mathematical concepts geometrically accurate\n"
-    "- Suggest appropriate transitions and visual effects\n"
+    "Core Guidelines:\n"
+    "• Transform abstract/vague concepts into concrete visual elements\n"
+    "• Specify colors, shapes, sizes, positions, and spatial relationships\n"
+    "• Include timing, sequencing, and animation flow details\n"
+    "• Add creative flourishes while staying true to user intent\n"
+    "• Maintain mathematical/geometric accuracy for technical content\n"
+    "• Suggest appropriate transitions, transformations, and effects\n"
+    "• Think in terms of 2D graphics primitives: circles, squares, lines, text, arrows, curves\n"
+    "• DEFAULT POSITION: Always describe the main subject or action as happening at the CENTER of the screen unless the user explicitly asks for a specific layout.\n"
     
-    "Output format:\n"
-    "- Write exactly ONE detailed paragraph (no bullet points or lists)\n"
-    "- Aim for 80-150 words for optimal detail without overwhelming\n"
-    "- Use vivid, descriptive language that inspires compelling visuals\n"
-    "- End with a clear conclusion or final visual state\n"
+    "Handling Different Input Types:\n"
+    "• VAGUE PROMPTS ('something cool'): Infer reasonable intent, create a visually interesting scene\n"
+    "• TECHNICAL/MATH ('Pythagorean theorem'): Explain visually with labeled diagrams and step-by-step construction\n"
+    "• SIMPLE SHAPES ('red circle'): Add context, motion, and visual interest\n"
+    "• COMPLEX IDEAS ('neural network'): Break down into visual components (nodes, connections, flow)\n"
+    "• EDUCATIONAL ('show how multiplication works'): Create clear, pedagogical visual explanations\n"
+    "• TRANSITIONS ('A becomes B'): Specify smooth morphing with intermediate states\n"
     
-    "Example transformation:\n"
+    "Output Format:\n"
+    "• Write exactly ONE comprehensive paragraph (no lists or bullets in output)\n"
+    "• Length: 80-150 words for optimal detail\n"
+    "• Use vivid, technical language that translates well to code\n"
+    "• End with a clear final state or conclusion\n"
+    "• Include specific numbers when helpful (positions, sizes, durations)\n"
+    
+    "Example Transformations:\n"
+    
     "Input: 'dancing circles'\n"
-    "Output: 'Create a mesmerizing scene where three vibrant circles of different sizes—a large blue circle, a medium red circle, and a small green circle—perform an elegant choreographed dance across the screen. Begin with all circles positioned at the center, then have them gracefully separate and move in synchronized circular patterns around each other, with the larger circles moving slower and the smaller one orbiting quickly. The circles should pulse gently with changing opacity as they dance, occasionally coming together in harmonious formations before spiraling outward again. The animation concludes with all three circles returning to the center and fading into a single golden circle that glows softly before disappearing.'"
+    "Output: 'Create three vibrant circles—a large blue circle (radius 1.5), medium red circle (radius 1.0), "
+    "and small green circle (radius 0.5)—starting at screen center. They gracefully separate and orbit each "
+    "other in synchronized elliptical paths, with the blue circle moving slowest and the green orbiting fastest. "
+    "Each circle pulses gently with opacity varying between 0.6 and 1.0. After completing two full orbits, they "
+    "converge back to center, merge into a single golden circle with a soft glow effect, then fade out smoothly.'\n"
+    
+    "Input: 'explain vectors'\n"
+    "Output: 'Begin with a 2D coordinate system showing x and y axes with gridlines. Draw a red arrow (vector) "
+    "starting from origin (0,0) pointing to coordinates (3,2), with a label showing 'v = (3,2)'. Animate the "
+    "vector's components by drawing a blue vertical line from origin to (3,0) labeled '3', then a green horizontal "
+    "line from (3,0) to (3,2) labeled '2', forming a right triangle. Show the vector magnitude formula sqrt(3²+2²) "
+    "appearing next to the arrow. Finally, demonstrate vector addition by drawing a second purple vector from the "
+    "tip of the first, showing how vectors combine graphically.'\n"
+    
+    "Input: 'something cool'\n"
+    "Output: 'Create a mesmerizing fractal-inspired animation starting with a single white square at the center. "
+    "The square divides into four smaller colored squares (red, blue, green, yellow) that slowly rotate and spread "
+    "outward. Each of these squares then subdivides again into smaller squares with gradient colors, creating a "
+    "cascading recursive pattern. As the pattern expands, the squares pulse with varying opacity creating a wave-like "
+    "effect. The animation concludes by reversing the process—all squares collapse back into the center, merge into "
+    "the original white square, then dissolve into particles that fade away.'\n"
+    
+    "Remember: Your output will be used to generate actual Python code for 2D animations. Be specific, visual, "
+    "and technically precise. When in doubt, add more visual detail rather than less."
 )
 
 class PromptExpansionError(Exception):
@@ -98,12 +134,14 @@ def expand_prompt(user_prompt: str, max_retries: int = 3) -> str:
                 {"role": "user", "content": user_prompt},
             ]
             
-            response = client.chat.completions.create(
-                model=MODEL_NAME,
-                messages=messages,
-                temperature=0.3 + (attempt * 0.1),  # Slightly increase creativity on retries
-                max_tokens=400,
-                top_p=0.9,
+            response = groq_circuit_breaker.call(
+                lambda: client.chat.completions.create(
+                    model=MODEL_NAME,
+                    messages=messages,
+                    temperature=0.3 + (attempt * 0.1),  # Slightly increase creativity on retries
+                    max_tokens=400,
+                    top_p=0.9,
+                )
             )
             
             expanded_text = response.choices[0].message.content.strip()
