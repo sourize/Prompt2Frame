@@ -1,7 +1,7 @@
 # ────────────────────────────────────────────────────────────────────────────
 # 1) Base image: Python 3.10-slim
 # ────────────────────────────────────────────────────────────────────────────
-FROM python:3.10-slim
+FROM python:3.10-slim-bookworm
 
 # ────────────────────────────────────────────────────────────────────────────
 # 2) Set working directory
@@ -21,7 +21,7 @@ RUN apt-get update && \
       libcairo2-dev \
       libpango1.0-dev \
       libpangocairo-1.0-0 \
-      libgdk-pixbuf2.0-dev \
+      libgdk-pixbuf-2.0-dev \
       libffi-dev \
       shared-mime-info \
       curl \
