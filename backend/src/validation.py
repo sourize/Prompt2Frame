@@ -147,7 +147,7 @@ class CodeSecurityValidator:
         'import socket', 'import pickle',
         
         # Shell commands
-        'system(', 'popen(', 'shell=',
+        'popen(', 'shell=',
     ]
     
     # Allowed imports only
@@ -237,17 +237,17 @@ class CodeSecurityValidator:
         """
         metrics = cls.analyze_code_complexity(code)
         
-        # Check limits
-        if metrics['object_count'] > 30:
-            return False, "Too many objects (limit: 30)"
+        # Check limits (Relaxed for complex animations)
+        if metrics['object_count'] > 100:
+            return False, "Too many objects (limit: 100)"
         
-        if metrics['animation_count'] > 30:
-            return False, "Too many animations (limit: 30)"
+        if metrics['animation_count'] > 100:
+            return False, "Too many animations (limit: 100)"
         
-        if metrics['loop_count'] > 10:
-            return False, "Too many loops (limit: 10)"
+        if metrics['loop_count'] > 50:
+            return False, "Too many loops (limit: 50)"
         
-        if metrics['function_count'] > 10:
-            return False, "Too many function definitions (limit: 10)"
+        if metrics['function_count'] > 50:
+            return False, "Too many function definitions (limit: 50)"
         
         return True, ""

@@ -553,52 +553,29 @@ async def generate_animation(
         # Sanitize the prompt
         sanitized_prompt = PromptValidator.sanitize_prompt(request.prompt)
         
-        # === PHASE 2.1: Check Video Cache ===
-        if video_cache:
-            cached_video_path = video_cache.get(sanitized_prompt, request.quality)
-            if cached_video_path:
-                # Video already generated!
-                app_state["cache_hits"] += 1
-                render_time = time.time() - start_time
-                logger.info(
-                    f"[{correlation_id}] ⚡ CACHE HIT! Returning cached video in {render_time:.2f}s"
-                )
-                return GenerateResponse(
-                    videoUrl=f"/media/videos/{Path(cached_video_path).parent.name}/{Path(cached_video_path).name}",
-                    renderTime=render_time,
-                    codeLength=0,  # Not re-generated
-                    expandedPrompt=None
-                )
-        
-        # === PHASE 2.1: Check Prompt Cache ===
-        cached_expansion = prompt_cache.get(sanitized_prompt)
-        if cached_expansion:
-            detailed_prompt = cached_expansion
-            logger.info(f"[{correlation_id}] ⚡ Prompt cache HIT, using cached expansion")
-        else:
-            # 1) Expand the prompt (using sanitized version)
-            logger.info("Expanding prompt...")
-            try:
-                detailed_prompt = await asyncio.wait_for(
-                    asyncio.create_task(asyncio.to_thread(expand_prompt, sanitized_prompt)),
-                    timeout=30
-                )
-                logger.info("Prompt expansion completed")
-                
-                # Cache the expansion
-                prompt_cache.set(sanitized_prompt, detailed_prompt)
-                logger.debug(f"Cached prompt expansion")
-            except asyncio.TimeoutError:
-                raise HTTPException(
-                    status_code=status.HTTP_408_REQUEST_TIMEOUT,
-                    detail="Prompt expansion timed out"
-                )
-            except Exception as e:
-                logger.error(f"Prompt expansion failed: {e}")
-                raise HTTPException(
-                    status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                    detail=f"Prompt expansion failed: {str(e)}"
-                )
+        # === CACHING DISABLED BY USER REQUEST ===
+        # (Original caching logic removed)
+
+        # 1) Expand the prompt (using sanitized version)
+        logger.info("Expanding prompt...")
+        try:
+            detailed_prompt = await asyncio.wait_for(
+                asyncio.create_task(asyncio.to_thread(expand_prompt, sanitized_prompt)),
+                timeout=30
+            )
+            logger.info("Prompt expansion completed")
+            
+        except asyncio.TimeoutError:
+            raise HTTPException(
+                status_code=status.HTTP_408_REQUEST_TIMEOUT,
+                detail="Prompt expansion timed out"
+            )
+        except Exception as e:
+            logger.error(f"Prompt expansion failed: {e}")
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail=f"Prompt expansion failed: {str(e)}"
+            )
 
         # 2) Generate Manim code
         logger.info("Generating Manim code...")
@@ -654,14 +631,6 @@ async def generate_animation(
         background_tasks.add_task(cleanup_old_files)
         # Calculate total time
         total_time = time.time() - start_time
-        
-        # === PHASE 2.1: Cache the Generated Video ===
-        if video_cache:
-            try:
-                video_cache.set(sanitized_prompt, str(video_path), request.quality)
-                logger.info(f"[{correlation_id}] ✔ Video cached for future requests")
-            except Exception as e:
-                logger.error(f"Failed to cache video: {e}")
         
         logger.info(f"Generation completed in {total_time:.2f}s")
 
