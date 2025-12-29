@@ -124,7 +124,7 @@ def expand_prompt(user_prompt: str, max_retries: int = 3) -> str:
         raise PromptExpansionError("Input prompt cannot be empty")
     
     # Sanitize input
-    user_prompt = user_prompt.strip()[:500]  # Limit length
+    user_prompt = user_prompt.strip()[:1500]  # Limit length to 1.5k chars
     
     for attempt in range(max_retries):
         try:
