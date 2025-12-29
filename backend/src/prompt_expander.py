@@ -46,7 +46,7 @@ SYSTEM = (
     "• TRANSITIONS ('A becomes B'): Specify smooth morphing with intermediate states\n"
     
     "Output Format:\n"
-    "• Write exactly ONE comprehensive paragraph (no lists or bullets in output)\n"
+    "• Write a comprehensive description (multiple paragraphs allowed)\n"
     "• Length: 150-300 words for optimal detail\n"
     "• Use vivid, technical language that translates well to code\n"
     "• End with a clear final state or conclusion\n"
@@ -97,9 +97,10 @@ def validate_expanded_prompt(text: str) -> None:
     if word_count > 500:
         raise PromptExpansionError(f"Expanded prompt too long ({word_count} words, maximum 500)")
     
-    # Check for paragraph structure (should be one paragraph)
-    if text.count('\n\n') > 0:
-        raise PromptExpansionError("Expanded prompt should be a single paragraph")
+    # Validation relaxed to allow multiple paragraphs for better structure
+    pass
+    
+    # Basic content validation
     
     # Basic content validation
     if text.lower().count('circle') + text.lower().count('square') + text.lower().count('triangle') + text.lower().count('line') == 0:
