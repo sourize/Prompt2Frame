@@ -47,7 +47,7 @@ SYSTEM = (
     
     "Output Format:\n"
     "• Write exactly ONE comprehensive paragraph (no lists or bullets in output)\n"
-    "• Length: 80-150 words for optimal detail\n"
+    "• Length: 150-300 words for optimal detail\n"
     "• Use vivid, technical language that translates well to code\n"
     "• End with a clear final state or conclusion\n"
     "• Include specific numbers when helpful (positions, sizes, durations)\n"
@@ -94,8 +94,8 @@ def validate_expanded_prompt(text: str) -> None:
     if word_count < 20:
         raise PromptExpansionError(f"Expanded prompt too short ({word_count} words, minimum 20)")
     
-    if word_count > 200:
-        raise PromptExpansionError(f"Expanded prompt too long ({word_count} words, maximum 200)")
+    if word_count > 500:
+        raise PromptExpansionError(f"Expanded prompt too long ({word_count} words, maximum 500)")
     
     # Check for paragraph structure (should be one paragraph)
     if text.count('\n\n') > 0:
@@ -139,7 +139,7 @@ def expand_prompt(user_prompt: str, max_retries: int = 3) -> str:
                     model=MODEL_NAME,
                     messages=messages,
                     temperature=0.3 + (attempt * 0.1),  # Slightly increase creativity on retries
-                    max_tokens=400,
+                    max_tokens=1000,
                     top_p=0.9,
                 )
             )
