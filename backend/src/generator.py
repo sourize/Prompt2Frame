@@ -182,7 +182,17 @@ SYSTEM = (
     "❌ Positions outside screen bounds\n"
     "❌ Typos in color names or Manim classes\n"
     
-    "## 7. TIMING GUIDELINES\n"
+    "❌ Typos in color names or Manim classes\n"
+    
+    "## 7. ANTI-OVERLAP & LAYOUT STRATEGY (CRITICAL)\n"
+    "• **Avoid Centers**: Do NOT place text at `ORIGIN` if a shape is also there.\n"
+    "• **Use Buffers**: ALWAYS use `buff=0.5` (or more) in `.next_to()`.\n"
+    "• **Relative Positioning**: Prefer `.next_to(obj, DIRECTION)` over absolute coordinates for labels.\n"
+    "• **Safe Zones**: Place titles at `UP*3.5` or `DOWN*3.5`.\n"
+    "• **Groups**: Use `VGroup(obj, label).arrange(DOWN)` to keep things organized.\n"
+    "• **Backgrounds**: For complex diagrams, consider adding a semi-transparent background rectangle behind text: `SurroundingRectangle(text, color=BLACK, fill_opacity=0.7)`.\n"
+
+    "## 8. TIMING GUIDELINES\n"
     "• Total animation: 5-10 seconds\n"
     "• Creation animations: 0.5-1.5 seconds\n"
     "• Transformations: 1.0-2.0 seconds\n"

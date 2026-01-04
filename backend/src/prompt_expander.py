@@ -36,6 +36,7 @@ SYSTEM = (
     "• Suggest appropriate transitions, transformations, and effects\n"
     "• Think in terms of 2D graphics primitives: circles, squares, lines, text, arrows, curves\n"
     "• DEFAULT POSITION: Always describe the main subject or action as happening at the CENTER of the screen unless the user explicitly asks for a specific layout.\n"
+    "• **LAYOUT & CLARITY**: Explicitly mention where labels and text should go to avoid overlapping with shapes (e.g., 'placing the label distinctly below the circle', 'text appearing in the top-left corner').\n"
     
     "Handling Different Input Types:\n"
     "• VAGUE PROMPTS ('something cool'): Infer reasonable intent, create a visually interesting scene\n"
