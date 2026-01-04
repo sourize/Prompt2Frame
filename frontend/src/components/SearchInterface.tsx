@@ -84,7 +84,8 @@ const SearchInterface = ({ loading, setLoading }: { loading: boolean; setLoading
       clearInterval(stepInterval);
 
       const returnedUrl: string = response.data.videoUrl;
-      const fullUrl = `${BACKEND_URL}${returnedUrl}?t=${Date.now()}`;
+      // Use the media proxy to fetch the video securely
+      const fullUrl = `/api/media?path=${encodeURIComponent(returnedUrl)}&t=${Date.now()}`;
       console.log('Video URL:', fullUrl);
       setVideoUrl(fullUrl);
 
