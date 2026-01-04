@@ -150,13 +150,20 @@ const SearchInterface = ({ loading, setLoading }: { loading: boolean; setLoading
             <span className="text-xs text-gray-300 font-medium">AI-Powered Animation</span>
           </div>
 
-          <h1 className="text-3xl sm:text-4xl md:text-5xl font-bold mb-2 sm:mb-3 px-4">
-            <span className="gradient-text">Prompt2Frame</span>
+          <h1 className="text-4xl sm:text-5xl md:text-6xl font-serif font-medium mb-3 sm:mb-4 px-4 tracking-tight text-white">
+            Prompt2Frame
           </h1>
 
-          <p className="text-gray-100 text-sm sm:text-base max-w-xl mx-auto leading-relaxed px-4">
+          <p className="text-gray-300 text-sm sm:text-base max-w-xl mx-auto leading-relaxed px-4 mb-6">
             Turn your ideas into stunning 2D animations with AI
           </p>
+
+          <div className="flex items-center justify-center gap-2">
+            <div className="flex items-center gap-1.5 px-3 py-1 rounded-full bg-green-500/10 border border-green-500/20">
+              <div className="w-1.5 h-1.5 rounded-full bg-green-500 animate-pulse" />
+              <span className="text-[10px] font-medium text-green-400 uppercase tracking-wider">Available on Web</span>
+            </div>
+          </div>
         </motion.div>
 
         {/* Premium Search Input */}
