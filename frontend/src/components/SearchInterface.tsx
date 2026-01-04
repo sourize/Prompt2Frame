@@ -77,7 +77,7 @@ const SearchInterface = ({ loading, setLoading }: { loading: boolean; setLoading
         {
           prompt,
           quality: 'm',
-          timeout: 300
+          timeout: 800
         }
       );
 
