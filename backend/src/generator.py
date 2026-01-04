@@ -356,6 +356,7 @@ SYSTEM = (
     "3. Exactly implements the prompt description\n"
     "4. Follows all guidelines strictly\n"
     "5. Is ready to execute immediately\n"
+    "6. MUST include at least one self.play() or self.wait() call\n"
     
     "Output ONLY the Python code, starting with 'from manim import *'. NO explanations, NO markdown."
 )
@@ -427,16 +428,25 @@ class CodeValidator:
             if method in code:
                 logger.warning(f"Deprecated method '{method}' found in code")
         
-        # Ensure self.play() calls exist
-        if "self.play(" not in code:
-            logger.warning("No self.play() calls found - animation may be empty")
+        # Ensure animation calls exist (REQUIRED)
+        if "self.play(" not in code and "self.wait(" not in code:
+            raise RuntimeError("Generated code has no animations (missing self.play or self.wait).")
+        
+        # Check for excessive run_time
+        # Simple regex to find run_time=X where X > 10
+        import re
+        run_time_matches = re.findall(r'run_time\s*=\s*(\d+)', code)
+        for duration in run_time_matches:
+            if int(duration) > 10:
+                logger.warning(f"Excessive animation duration detected: {duration}s")
+                # We could raise an error here if we want to be strict
         
         # Check for potential memory issues
         if code.count("np.array") > 20:
             logger.warning("High number of numpy arrays created - potential memory issue")
         
         # Check for animation complexity
-        if code.count("self.play") > 10:
+        if code.count("self.play") > 15:
             logger.warning("High number of animations - potential performance issue")
 
 def _clean_and_format_code(code: str) -> str:

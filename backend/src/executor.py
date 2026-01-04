@@ -164,11 +164,23 @@ def _concatenate_videos(video_paths: List[Path], output_path: Path) -> None:
     try:
         with tempfile.NamedTemporaryFile(mode='w', suffix='.txt', delete=False) as f:
             concat_file = Path(f.name)
+            valid_videos = []
             for video_path in video_paths:
                 if not video_path.exists():
-                    raise RenderError(f"Input video file not found: {video_path}")
+                    logger.warning(f"Input video file not found: {video_path}")
+                    continue
+                
+                # Check for zero-byte files
+                if video_path.stat().st_size == 0:
+                    logger.warning(f"Skipping empty video file: {video_path}")
+                    continue
+                    
+                valid_videos.append(video_path)
                 # Use as_posix() to ensure forward slashes, avoiding escape char issues on Windows
                 f.write(f"file '{video_path.resolve().as_posix()}'\n")
+
+            if not valid_videos:
+                raise RenderError("No valid video files found to concatenate")
         
         # Try lossless concatenation first
         cmd = [

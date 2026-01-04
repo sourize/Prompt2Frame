@@ -45,7 +45,7 @@ PORT = settings.port
 class GenerateRequest(BaseModel):
     prompt: str = Field(..., min_length=1, max_length=1500, description="Animation prompt")
     quality: str = Field("m", pattern="^[lmh]$", description="Render quality: l/m/h")
-    timeout: int = Field(300, ge=60, le=600, description="Timeout in seconds")
+    timeout: int = Field(600, ge=60, le=900, description="Timeout in seconds")
 
 class GenerateResponse(BaseModel):
     videoUrl: str
