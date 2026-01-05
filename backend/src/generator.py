@@ -183,6 +183,13 @@ SYSTEM = (
     "❌ Typos in color names or Manim classes\n"
     
     "❌ Typos in color names or Manim classes\n"
+    "❌ Using 'Heart', 'Star', or other non-standard shapes. (They DO NOT exist!)\n"
+    "\n"
+    "### HOW TO MAKE CUSTOM SHAPES (Required Workarounds):\n"
+    "• Heart: Use two `Arc` objects + two `Line` objects or a `ParametricFunction`.\n"
+    "• Star: Use `Star()` (only if verified) OR `Polygon` with specific points.\n"
+    "• Complex Shapes: Use `SVGMobject` (if path known) or combine `Circle`/`Square`/`Triangle`.\n"
+    "• NEVER invent class names like `Heart()`, `Human()`, `Cat()`, `Building()`.\n"
     
     "## 7. ANTI-OVERLAP & LAYOUT STRATEGY (CRITICAL)\n"
     "• **Avoid Centers**: Do NOT place text at `ORIGIN` if a shape is also there.\n"
