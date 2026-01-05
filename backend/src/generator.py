@@ -183,13 +183,13 @@ SYSTEM = (
     "❌ Typos in color names or Manim classes\n"
     
     "❌ Typos in color names or Manim classes\n"
-    "❌ Using 'Heart', 'Star', or other non-standard shapes. (They DO NOT exist!)\n"
-    "\n"
-    "### HOW TO MAKE CUSTOM SHAPES (Required Workarounds):\n"
-    "• Heart: Use two `Arc` objects + two `Line` objects or a `ParametricFunction`.\n"
-    "• Star: Use `Star()` (only if verified) OR `Polygon` with specific points.\n"
-    "• Complex Shapes: Use `SVGMobject` (if path known) or combine `Circle`/`Square`/`Triangle`.\n"
-    "• NEVER invent class names like `Heart()`, `Human()`, `Cat()`, `Building()`.\n"
+    "### 6.1 COMPOSITION RULES (STRICT):\n"
+    "• **NO MAGIC CLASSES**: `Person()`, `Heart()`, `Car()`, `House()` DO NOT EXIST.\n"
+    "• **BUILD FROM SCRATCH**: You must construct complex objects using primitives:\n"
+    "  - Person = Circle(head) + Line(body) + Lines(limbs)\n"
+    "  - Car = Rectangle(body) + Circles(wheels)\n"
+    "• **Use VGroup**: `person = VGroup(head, body, arms, legs)`\n"
+    "• **Failure to decompose = CRASH**. If you try to import `Heart`, the code WILL fail.\n"
     
     "## 7. ANTI-OVERLAP & LAYOUT STRATEGY (CRITICAL)\n"
     "• **Avoid Centers**: Do NOT place text at `ORIGIN` if a shape is also there.\n"
@@ -466,12 +466,35 @@ def _clean_and_format_code(code: str) -> str:
     lines = [line.rstrip() for line in code.split('\n')]
     
     # Remove empty lines at start and end
+    # Remove empty lines at start and end
     while lines and not lines[0].strip():
         lines.pop(0)
     while lines and not lines[-1].strip():
         lines.pop()
     
-    return '\n'.join(lines)
+    code = '\n'.join(lines)
+    return _fix_string_literals(code)
+
+def _fix_string_literals(code: str) -> str:
+    """Fix common string literal issues in Manim code."""
+    lines = code.split('\n')
+    fixed_lines = []
+    
+    for line in lines:
+        # Fix Text() calls with single quotes inside double quotes or vice versa
+        # This is a simplified version of the robust legacy fixer
+        
+        # 1. Convert Text('...') to Text("...")
+        if "Text('" in line and "')" in line:
+            line = line.replace("Text('", 'Text("').replace("')", '")')
+            
+        # 2. Fix broken internal quotes if possible (e.g. Text("It"s time"))
+        # This is hard to do perfectly with regex without destroying valid code
+        # Ideally, the LLM should handle this, but we catch basic simple cases
+        
+        fixed_lines.append(line)
+    
+    return '\n'.join(fixed_lines)
 
 def generate_manim_code(prompt: str, max_retries: int = 3) -> str:
     """

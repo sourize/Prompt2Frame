@@ -45,9 +45,11 @@ SYSTEM = (
     "• COMPLEX IDEAS ('neural network'): Break down into visual components (nodes, connections, flow)\n"
     "• EDUCATIONAL ('show how multiplication works'): Create clear, pedagogical visual explanations\n"
     "• TRANSITIONS ('A becomes B'): Specify smooth morphing with intermediate states\n"
+    "• DECOMPOSITION (CRITICAL): Break down complex objects into simple geometric parts (e.g., 'Stick figure' -> 'Circle head, Line body, Line arms').\n"
     
     "Output Format:\n"
-    "• Write a comprehensive description (multiple paragraphs allowed)\n"
+    "• Write a comprehensive description acting as a BLUEPRINT for code generation.\n"
+    "• EXPLICITLY list the geometric shapes needed for complex concepts.\n"
     "• Length: 150-300 words for optimal detail\n"
     "• Use vivid, technical language that translates well to code\n"
     "• End with a clear final state or conclusion\n"
