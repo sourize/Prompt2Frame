@@ -94,7 +94,7 @@ class CodeValidator:
             raise RuntimeError("Code must start with 'from manim import *'")
         
         # Check for required imports
-        required_imports = ["from manim import *", "import random", "import numpy as np"]
+        required_imports = ["from manim import *", "import numpy as np"]
         for imp in required_imports:
             if imp not in code:
                 raise RuntimeError(f"Missing required import: {imp}")
