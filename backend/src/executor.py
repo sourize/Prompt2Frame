@@ -277,16 +277,25 @@ def render_and_concat_all(
             media_dir = work_dir / "media"
             
             # Build Manim command
+            # Build Manim command
+            # NOTE: We do NOT use -q/--quality here because it conflicts with some setups.
+            # We rely on config.quality being set or default.
+            # Actually, standard Manim CLI requires -q{quality} for quality.
+            # But we must ensure NO duplicates.
+            
             cmd = [
                 "manim",
                 "render",
                 str(script_path),
                 *scene_names,
                 f"-q{quality}",
-                "--disable_caching",
                 "--media_dir", str(media_dir),
-                "--verbosity", "WARNING"  # Reduce log verbosity
+                "--verbosity", "WARNING",
             ]
+            
+            # Explicitly add only non-default flags
+            if not "--disable_caching" in cmd:
+                 cmd.append("--disable_caching")
             
             # Add performance optimizations
             if quality == "l":

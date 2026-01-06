@@ -53,9 +53,15 @@ SYSTEM = (
     "   - If label.background == true → Wrap label in `sur = SurroundingRectangle(label, buff=0.18)` and render both.\n"
     "   - Position label relative to object using `.next_to(obj, direction, buff=0.5)` where direction maps from `position_hint`: below → DOWN, above → UP, left→LEFT, right→RIGHT, top-left→UL, top-right→UR, bottom-left→DL, bottom-right→DR, center→ORIGIN (centered).\n"
     "\n"
-    "6. Anti-overlap & clamping:\n"
-    "   - After initial placement, compute bounding boxes with `get_bounding_box()` and run a greedy loop: if two boxes intersect, move the later-added object by 0.6 units along +x or -x until no collision (limit 8 attempts). Always log a Python `print()` line describing any clamp/shift (for debug).\n"
-    "   - Ensure all text font_size >= 24. If requested size is smaller, use 24 and print a message.\n"
+    "6. Anti-overlap & clamping (SAFE MODE):\n"
+    "   - **NEVER** use `get_bounding_box()` or `.intersects()` directly (they crash).\n"
+    "   - **USE INJECTED HELPERS**: I have injected `compute_bounding_box(mobj)` and `bbox_intersects(b1, b2)` for you.\n"
+    "   - Strategy:\n"
+    "     1. Place objects.\n"
+    "     2. `b1 = compute_bounding_box(obj1)`\n"
+    "     3. `b2 = compute_bounding_box(obj2)`\n"
+    "     4. `if bbox_intersects(b1, b2): obj2.shift(RIGHT * 0.6)`\n"
+    "   - Ensure all text font_size >= 24.\n"
     "\n"
     "7. Animations & timing:\n"
     "   - For each `sequence` step: map `duration_sec` to `run_time` for self.play calls (use run_time = min(max(0.5, duration_sec * 0.9), 2.5)).\n"
@@ -164,6 +170,51 @@ class CodeValidator:
         if code.count("self.play") > 15:
             logger.warning("High number of animations - potential performance issue")
 
+SAFE_MANIM_HELPERS = """
+# === SAFE MANIM HELPERS (INJECTED) ===
+def get_safe_center(mobj):
+    try:
+        return mobj.get_center()
+    except:
+        return np.array([0, 0, 0])
+
+def compute_bounding_box(mobj):
+    \"\"\"
+    Robust bounding box computation that works for any Manim mobject.
+    Returns (left, right, bottom, top).
+    \"\"\"
+    try:
+        # Try standard width/height first
+        center = get_safe_center(mobj)
+        width = mobj.width
+        height = mobj.height
+        return (
+            center[0] - width/2,
+            center[0] + width/2,
+            center[1] - height/2,
+            center[1] + height/2
+        )
+    except:
+        # Fallback to points
+        try:
+            points = mobj.get_all_points()
+            if len(points) == 0:
+                raise ValueError("No points")
+            xs = points[:, 0]
+            ys = points[:, 1]
+            return (np.min(xs), np.max(xs), np.min(ys), np.max(ys))
+        except:
+            # Absolute fallback
+            return (-1, 1, -1, 1)
+
+def bbox_intersects(bbox1, bbox2):
+    \"\"\"Returns True if two bounding boxes intersect.\"\"\"
+    l1, r1, b1, t1 = bbox1
+    l2, r2, b2, t2 = bbox2
+    return not (r1 < l2 or l1 > r2 or t1 < b2 or b1 > t2)
+# =====================================
+"""
+
 def _clean_and_format_code(code: str) -> str:
     """Clean and format the generated code."""
     # Remove any markdown code blocks
@@ -174,14 +225,32 @@ def _clean_and_format_code(code: str) -> str:
     lines = [line.rstrip() for line in code.split('\n')]
     
     # Remove empty lines at start and end
-    # Remove empty lines at start and end
     while lines and not lines[0].strip():
         lines.pop(0)
     while lines and not lines[-1].strip():
         lines.pop()
     
-    code = '\n'.join(lines)
-    return _fix_string_literals(code)
+    # Inject helpers after imports
+    final_lines = []
+    helpers_injected = False
+    for line in lines:
+        final_lines.append(line)
+        if not helpers_injected and "import" in line and "manim" not in line:
+            # Inject after the last import that isn't manim (heuristic)
+            pass
+    
+    # Simpler injection: Just Find "from manim import *"
+    processed_code = '\n'.join(lines)
+    if "from manim import *" in processed_code:
+        processed_code = processed_code.replace(
+            "from manim import *", 
+            "from manim import *\n" + SAFE_MANIM_HELPERS
+        )
+    else:
+        # Fallback: Prepend
+        processed_code = SAFE_MANIM_HELPERS + "\n" + processed_code
+
+    return _fix_string_literals(processed_code)
 
 def _fix_string_literals(code: str) -> str:
     """Fix common string literal issues in Manim code."""
