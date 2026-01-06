@@ -153,6 +153,7 @@ class CodeSecurityValidator:
     # Allowed imports only
     ALLOWED_IMPORTS = [
         'from manim import *',
+        'from manim import config',
         'import random',
         'import numpy as np',
         'import math',  # Safe math operations
