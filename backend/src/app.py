@@ -560,7 +560,7 @@ async def generate_animation(
         logger.info("Expanding prompt...")
         try:
             detailed_prompt = await asyncio.wait_for(
-                asyncio.create_task(asyncio.to_thread(expand_prompt, sanitized_prompt)),
+                asyncio.create_task(asyncio.to_thread(expand_prompt_with_fallback, sanitized_prompt)),
                 timeout=30
             )
             logger.info("Prompt expansion completed")
@@ -581,7 +581,7 @@ async def generate_animation(
         logger.info("Generating Manim code...")
         try:
             code = await asyncio.wait_for(
-                asyncio.create_task(asyncio.to_thread(generate_manim_code_with_fallback, detailed_prompt)),
+                asyncio.create_task(asyncio.to_thread(generate_code_with_retries, detailed_prompt)),
                 timeout=60
             )
             logger.info(f"Code generation completed ({len(code)} chars)")
