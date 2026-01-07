@@ -247,16 +247,36 @@ def expand_prompt_with_fallback(user_prompt: str) -> str:
         logger.error(f"Primary prompt expansion failed: {e}")
         logger.info("Using fallback expansion...")
         
-        # Simple fallback expansion
-        fallback = (
-            f"Create a simple 2D animation featuring basic geometric shapes that represent the concept of '{user_prompt}'. "
-            f"Use colorful circles, squares, and triangles arranged in an visually appealing composition. "
-            f"Animate the shapes with smooth movements, color transitions, and gentle scaling effects. "
-            f"The animation should be engaging and clearly convey the essence of the original request through "
-            f"abstract geometric visualization, concluding with all elements harmoniously arranged on screen."
-        )
+        # Simple fallback expansion returning valid JSON schema
+        fallback_json = {
+            "intent_graph": {
+                "objects": {
+                    "fallback_circle": {
+                        "type": "circle",
+                        "persistent": true
+                    }
+                },
+                "actions": [
+                    {
+                        "type": "create",
+                        "object": "fallback_circle",
+                        "temporal": "sequential"
+                    }
+                ]
+            },
+            "animation_blueprint": {
+                "canvas": {"width": 14, "height": 8},
+                "timeline": [
+                    {
+                        "action": "create",
+                        "object": "fallback_circle",
+                        "params": {}
+                    }
+                ]
+            }
+        }
         
-        return fallback
+        return json.dumps(fallback_json)
 
 # Additional utility functions
 def get_prompt_complexity_score(prompt: str) -> dict:

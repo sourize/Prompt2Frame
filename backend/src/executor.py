@@ -320,23 +320,9 @@ def render_and_concat_all(
             
             logger.info(f"Found {len(video_files)} video file(s)")
             
-            # Sort videos by scene order if multiple
-            if len(video_files) > 1:
-                # Try to match scene names to file names for proper ordering
-                ordered_videos = []
-                for scene_name in scene_names:
-                    matching_videos = [v for v in video_files if scene_name in v.name]
-                    if matching_videos:
-                        ordered_videos.extend(matching_videos)
-                
-                # Add any remaining videos
-                for video in video_files:
-                    if video not in ordered_videos:
-                        ordered_videos.append(video)
-                
-                video_files = ordered_videos
+            # Define final output path
+            final_video_path = final_output_dir / "output.mp4"
             
-            # Determine final output path
             # STRICT: One Scene, One Video
             if len(video_files) == 1:
                 logger.info("Single video file verified. Copying to final location.")
