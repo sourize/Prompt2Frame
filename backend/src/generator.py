@@ -207,14 +207,18 @@ def _clean_and_format_code(code: str) -> str:
     
     # Simpler injection: Just Find "from manim import *"
     processed_code = '\n'.join(lines)
+    
+    # Ensure numpy is imported for the helpers
+    header_injection = "import numpy as np\nfrom manim import config\n" + SAFE_MANIM_HELPERS
+    
     if "from manim import *" in processed_code:
         processed_code = processed_code.replace(
             "from manim import *", 
-            "from manim import *\n" + SAFE_MANIM_HELPERS
+            "from manim import *\n" + header_injection
         )
     else:
         # Fallback: Prepend
-        processed_code = SAFE_MANIM_HELPERS + "\n" + processed_code
+        processed_code = "from manim import *\n" + header_injection + "\n" + processed_code
 
     return _fix_string_literals(processed_code)
 
