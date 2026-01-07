@@ -337,15 +337,17 @@ def render_and_concat_all(
                 video_files = ordered_videos
             
             # Determine final output path
-            final_video_path = final_output_dir / "final_animation.mp4"
-            
-            # Concatenate videos if multiple, otherwise just copy
+            # STRICT: One Scene, One Video
             if len(video_files) == 1:
-                logger.info("Single video file, copying to final location")
+                logger.info("Single video file verified. Copying to final location.")
                 shutil.copy2(video_files[0], final_video_path)
             else:
-                logger.info(f"Concatenating {len(video_files)} video files")
-                _concatenate_videos(video_files, final_video_path)
+                # REJECT multiple outputs
+                logger.error(f"Render failed: Expected 1 video, found {len(video_files)}")
+                raise RenderError(
+                    f"Generator Error: Manim produced {len(video_files)} partial videos. "
+                    "Refactor animation to use Succession/AnimationGroup inside ONE Scene."
+                )
             
             # Verify final video exists and has reasonable size
             if not final_video_path.exists():
