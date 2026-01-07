@@ -65,6 +65,10 @@ CRITICAL RULES:
     - Use Create() instead of ShowCreation()
     - Use Create() instead of Write() for most cases
     - Use FadeIn() instead of FadeInFrom()
+14. **FORBIDDEN: MathTex, Tex, TexTemplate** - LaTeX is NOT installed in deployment environment
+    - Use Text() for ALL labels, coordinates, and text content
+    - Example: Text("(0, 2)", font_size=20) NOT MathTex("(0, 2)")
+    - Simple text only, no mathematical typesetting
 
 CUSTOMIZATION INSTRUCTIONS:
 - If the spec mentions specific coordinates, USE THEM EXACTLY
