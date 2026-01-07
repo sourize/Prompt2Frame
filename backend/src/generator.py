@@ -185,17 +185,30 @@ def generate_code(technical_spec: str) -> str:
     """
     logger.info("Starting code generation")
     
-    # Tier 1: Try template matching
-    logger.info("Attempting template matching")
-    template_code = match_template(technical_spec)
+    # Check if request has enhanced requirements that templates can't handle
+    spec_lower = technical_spec.lower()
+    enhanced_keywords = [
+        'line through', 'connect', 'draw a line', 'add a line',
+        'show trajectory', 'fit a curve', 'regression',
+        'and also', 'as well as', 'additionally', 'plus'
+    ]
     
-    # If matched a template (not fallback), return it
-    if template_code != TEMPLATE_FALLBACK:
-        logger.info("Template match found, using proven code")
-        return template_code
+    has_enhanced_requirements = any(keyword in spec_lower for keyword in enhanced_keywords)
     
-    # Tier 2: Try AI generation for novel requests
-    logger.info("No template match, trying AI generation")
+    # Tier 1: Try template matching (only if no enhanced requirements)
+    if not has_enhanced_requirements:
+        logger.info("Attempting template matching")
+        template_code = match_template(technical_spec)
+        
+        # If matched a template (not fallback), return it
+        if template_code != TEMPLATE_FALLBACK:
+            logger.info("Template match found, using proven code")
+            return template_code
+    else:
+        logger.info("Enhanced requirements detected, skipping templates and using AI")
+    
+    # Tier 2: Try AI generation for novel/enhanced requests
+    logger.info("No template match or enhanced request, trying AI generation")
     ai_code = generate_with_ai(technical_spec)
     
     if ai_code and validate_code_basic(ai_code):
