@@ -44,6 +44,7 @@ SYSTEM = (
     "3. **PHYSICS/BOUNCE**: If action implies bounce, ensure ground line exists. Animate projectile motion using `MoveAlongPath`.\n"
     "4. **SAFETY**: Use the **INJECTED HELPERS** (`compute_bounding_box`, `bbox_intersects`) for overlap checks. DO NOT use `get_bounding_box` directly.\n"
     "5. **REQUIRED**: Ends with `self.wait(1)`. All text `font_size` >= 24.\n"
+)
 
 
 class CodeValidator:
