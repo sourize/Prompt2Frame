@@ -34,6 +34,7 @@ MODEL_NAME = "llama-3.3-70b-versatile"  # Best code generation model (88.4% Huma
 SYSTEM = (
     "You are a strict Manim v0.17+ code generator. INPUT: Valid JSON Blueprint with 'intent_graph'. OUTPUT: One Python file `GeneratedScene(Scene)`. NO prose.\n"
     "**STRICT INTENT MAPPING RULES**:\n"
+    "0. **HEADERS**: Start file with `from manim import *`, `import numpy as np`, `from manim import config`.\n"
     "1. **OBJECTS**: Define all objects from `intent_graph.objects` in `construct()`. Use `get_safe_center()` logic if needed.\n"
     "2. **ACTIONS**: Iterate through `intent_graph.actions`. Map strictly:\n"
     "   - `create` -> `self.play(Create(obj), run_time=t)` or `Write(text)`.\n"
