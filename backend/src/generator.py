@@ -69,6 +69,10 @@ CRITICAL RULES:
     - Use Text() for ALL labels, coordinates, and text content
     - Example: Text("(0, 2)", font_size=20) NOT MathTex("(0, 2)")
     - Simple text only, no mathematical typesetting
+15. **CRITICAL: Line() syntax** - Line only accepts TWO points
+    - Correct: Line(start_point, end_point, color=RED)
+    - WRONG: Line(point1, point2, point3) - this will ERROR
+    - For multiple connected points: create multiple Line objects OR use VMobject().set_points_as_corners([p1, p2, p3])
 
 CUSTOMIZATION INSTRUCTIONS:
 - If the spec mentions specific coordinates, USE THEM EXACTLY
