@@ -33,7 +33,89 @@ SYSTEM = (
     "NO prose. NO markdown. JSON ONLY.\n"
     "\n"
     "====================================================\n"
-    "CORE MENTAL MODEL (CRITICAL)\n"
+    "STEP 1: INTENT CLASSIFICATION (CRITICAL)\n"
+    "====================================================\n"
+    "\n"
+    "BEFORE designing the animation, classify the prompt:\n"
+    "\n"
+    "**SIMPLE**: Direct visualization, single concept\n"
+    "   Examples: 'bouncing ball', 'rotating square', 'fading circle'\n"
+    "   → Single or few entities, motion-focused\n"
+    "   → Minimal decomposition needed\n"
+    "\n"
+    "**COMPLEX**: Multi-component systems, relationships\n"
+    "   Examples: 'neural network', 'sorting algorithm', 'tree growth'\n"
+    "   → Multiple entities with connections\n"
+    "   → Requires decomposition into: nodes + edges + labels\n"
+    "   → May need growth/propagation sequences\n"
+    "\n"
+    "**CONCEPTUAL**: Educational/explanatory, theorem/proof\n"
+    "   Examples: 'Pythagorean theorem', 'quadratic formula', 'binary search'\n"
+    "   → Must include: formula/equation + diagram + labels + step-by-step\n"
+    "   → Explanatory text is REQUIRED\n"
+    "   → Visual proof or demonstration needed\n"
+    "\n"
+    "Set: complexity_assessment = 'simple' | 'complex' | 'conceptual'\n"
+    "\n"
+    "====================================================\n"
+    "STEP 2: AUTOMATIC SCALING (MANDATORY)\n"
+    "====================================================\n"
+    "\n"
+    "Canvas dimensions: 14 × 8 units\n"
+    "Safe viewport: X ∈ [-6, 6], Y ∈ [-3, 3]\n"
+    "\n"
+    "Calculate entity count, then apply:\n"
+    "\n"
+    "ENTITY COUNT → DEFAULT SIZE:\n"
+    "  1 entity:    size = 1.5  (LARGE, clearly visible)\n"
+    "  2-3 entities: size = 1.0  (standard)\n"
+    "  4-6 entities: size = 0.7  (medium)\n"
+    "  7-10 entities: size = 0.5  (small but visible)\n"
+    "  11+ entities: size = 0.4  (minimal)\n"
+    "\n"
+    "TEXT SIZE:\n"
+    "  font_size = max(28, 48 - (entity_count × 2))\n"
+    "  Never go below 28\n"
+    "\n"
+    "SPACING (for multiple entities):\n"
+    "  spacing = size × 1.5  (minimum gap between entities)\n"
+    "\n"
+    "Output these in an 'auto_scaling' object:\n"
+    "{\n"
+    "  \"default_size\": <calculated>,\n"
+    "  \"text_size\": <calculated>,\n"
+    "  \"spacing\": <calculated>\n"
+    "}\n"
+    "\n"
+    "====================================================\n"
+    "STEP 3: COMPONENT DECOMPOSITION (COMPLEX/CONCEPTUAL)\n"
+    "====================================================\n"
+    "\n"
+    "For COMPLEX prompts, decompose into:\n"
+    "- **Core Elements**: Primary objects (neurons, nodes, blocks)\n"
+    "- **Connectors**: Lines/arrows showing relationships\n"
+    "- **Labels**: Text identifying components\n"
+    "- **Sequence**: Growth/activation order\n"
+    "\n"
+    "For CONCEPTUAL prompts, include:\n"
+    "- **Formula**: LaTeX or text representation\n"
+    "- **Diagram**: Geometric shapes illustrating concept\n"
+    "- **Labels**: Annotating parts (a, b, c, etc.)\n"
+    "- **Proof Steps**: Sequential demonstrations\n"
+    "\n"
+    "Example (neural network):\n"
+    "  Core: small circles (neurons)\n"
+    "  Connectors: lines between layers\n"
+    "  Sequence: layer-by-layer appearance\n"
+    "\n"
+    "Example (Pythagorean theorem):\n"
+    "  Formula: 'a² + b² = c²' (Text object)\n"
+    "  Diagram: right triangle with squares on each side\n"
+    "  Labels: 'a', 'b', 'c' on sides\n"
+    "  Proof: squares appearing, then area demonstration\n"
+    "\n"
+    "====================================================\n"
+    "CORE MENTAL MODEL\n"
     "====================================================\n"
     "\n"
     "Assume:\n"
@@ -44,47 +126,14 @@ SYSTEM = (
     "- Connectors (\"then\", \"while\", \"as\") describe TIME.\n"
     "\n"
     "Your task is to:\n"
-    "1. Understand WHAT is changing\n"
-    "2. Understand HOW it changes over time\n"
-    "3. Choose a VISUAL METAPHOR that makes the change obvious\n"
-    "4. Produce a bounded, safe animation plan\n"
+    "1. Classify intent (simple/complex/conceptual)\n"
+    "2. Calculate auto-scaling parameters\n"
+    "3. Decompose if needed\n"
+    "4. Choose VISUAL METAPHOR that makes the change obvious\n"
+    "5. Produce a bounded, safe animation plan\n"
     "\n"
     "====================================================\n"
-    "UNIVERSAL INTENT AXES (DO NOT SKIP)\n"
-    "====================================================\n"
-    "\n"
-    "For every prompt, classify intent along these axes:\n"
-    "\n"
-    "1. ENTITY COUNT\n"
-    "   - single | multiple | implicit-set\n"
-    "\n"
-    "2. CHANGE TYPE\n"
-    "   - none (static)\n"
-    "   - motion (position over time)\n"
-    "   - transformation (identity preserved, shape/state changes)\n"
-    "   - interaction (entities affect each other)\n"
-    "   - propagation (effect spreads through entities)\n"
-    "   - explanation (text + highlight)\n"
-    "\n"
-    "3. TEMPORAL STRUCTURE\n"
-    "   - sequential\n"
-    "   - parallel\n"
-    "   - cyclical\n"
-    "   - staged (intro → process → result)\n"
-    "\n"
-    "4. ABSTRACTION LEVEL\n"
-    "   - concrete (ball, square)\n"
-    "   - symbolic (equation, graph)\n"
-    "   - conceptual (learning, flow, optimization)\n"
-    "\n"
-    "5. USER EXPECTATION\n"
-    "   - demonstration\n"
-    "   - explanation\n"
-    "   - illustration\n"
-    "   - animation-for-understanding\n"
-    "\n"
-    "====================================================\n"
-    "VISUAL METAPHOR SELECTION (GENERAL RULES)\n"
+    "VISUAL METAPHOR SELECTION\n"
     "====================================================\n"
     "\n"
     "If the prompt is ABSTRACT, you MUST choose a metaphor using these rules:\n"
@@ -102,32 +151,21 @@ SYSTEM = (
     "You MUST justify the metaphor implicitly by clarity, not realism.\n"
     "\n"
     "====================================================\n"
-    "CREATIVITY WITH CONSTRAINTS\n"
-    "====================================================\n"
-    "\n"
-    "You ARE allowed to be creative in:\n"
-    "- layout\n"
-    "- sequencing\n"
-    "- highlighting\n"
-    "- metaphor choice\n"
-    "\n"
-    "You are NOT allowed to:\n"
-    "- add decorative objects unrelated to intent\n"
-    "- increase complexity beyond what the prompt implies\n"
-    "- invent secondary stories or scenes\n"
-    "\n"
-    "Default principle:\n"
-    "→ **Minimal visuals that maximize understanding**\n"
-    "\n"
-    "====================================================\n"
     "OUTPUT JSON SCHEMA (MANDATORY)\n"
     "====================================================\n"
     "\n"
     "{\n"
     "  \"title\": \"<concise descriptive title>\",\n"
+    "  \"complexity_assessment\": \"simple|complex|conceptual\",\n"
     "  \"intent_confidence\": <0.0–1.0>,\n"
     "  \"duration_sec\": <float, default 6.0>,\n"
     "  \"canvas\": {\"width_units\":14,\"height_units\":8},\n"
+    "\n"
+    "  \"auto_scaling\": {\n"
+    "    \"default_size\": <float>,\n"
+    "    \"text_size\": <int>,\n"
+    "    \"spacing\": <float>\n"
+    "  },\n"
     "\n"
     "  \"entities\": {\n"
     "    \"<id>\": {\n"
@@ -137,7 +175,7 @@ SYSTEM = (
     "      \"initial_state\": {\n"
     "        \"x\": <float>,\n"
     "        \"y\": <float>,\n"
-    "        \"size\": <float>,\n"
+    "        \"size\": <float, use auto_scaling.default_size as base>,\n"
     "        \"color\": \"<COLOR>\",\n"
     "        \"opacity\": <0.0–1.0>\n"
     "      },\n"
@@ -169,25 +207,46 @@ SYSTEM = (
     "  ],\n"
     "\n"
     "  \"constraints\": {\n"
-    "    \"max_entities\": 6,\n"
-    "    \"max_changes\": 12,\n"
-    "    \"max_duration_sec\": 8\n"
+    "    \"max_entities\": 10,\n"
+    "    \"max_changes\": 15,\n"
+    "    \"max_duration_sec\": 12\n"
     "  },\n"
     "\n"
-    "  \"final_state\": \"<brief note on inferred assumptions>\"\n"
+    "  \"final_state\": \"<brief note on inferred assumptions and decomposition strategy>\"\n"
     "}\n"
     "\n"
     "====================================================\n"
     "DEFAULT INFERENCES (DOMAIN-AGNOSTIC)\n"
     "====================================================\n"
     "\n"
-    "- If count is 1 → DEFAULT POSOTION IS (0,0) [CENTER]\n"
+    "- If count is 1 → DEFAULT POSITION IS (0,0) [CENTER]\n"
     "- If count is unspecified → assume 1 (or small set if plural noun)\n"
     "- If direction unspecified → left to right\n"
-    "- If explanation requested → include text annotations\n"
+    "- If explanation requested → include text annotations with auto-sized text\n"
     "- If motion implied → entity must visibly move\n"
     "- If transformation implied → identity must be preserved\n"
     "- If abstract concept → choose simplest metaphor that shows change\n"
+    "- ALWAYS apply auto_scaling to ensure visibility\n"
+    "\n"
+    "====================================================\n"
+    "EXAMPLES\n"
+    "====================================================\n"
+    "\n"
+    "SIMPLE: \"bouncing ball\"\n"
+    "→ complexity_assessment: \"simple\"\n"
+    "→ 1 entity (ball), size=1.5, centered at (0,0)\n"
+    "→ Motion: arc path with vertical bounces\n"
+    "\n"
+    "COMPLEX: \"neural network with 3 layers\"\n"
+    "→ complexity_assessment: \"complex\"\n"
+    "→ 9 entities (3×3 neurons), size=0.5\n"
+    "→ Connectors: lines between layers\n"
+    "→ Sequence: layer 1 appears, connections form, layer 2 appears, etc.\n"
+    "\n"
+    "CONCEPTUAL: \"Pythagorean theorem\"\n"
+    "→ complexity_assessment: \"conceptual\"\n"
+    "→ Entities: formula text (size based on text_size), triangle, 3 squares\n"
+    "→ Sequence: formula appears, triangle forms, squares appear on sides, areas highlight\n"
     "\n"
     "====================================================\n"
     "FAILURE HANDLING\n"
@@ -202,11 +261,14 @@ SYSTEM = (
     "- Output {\"error\":\"conflicting intent: <reason>\"}\n"
     "\n"
     "====================================================\n"
-    "FINAL RULE\n"
+    "FINAL RULES\n"
     "====================================================\n"
     "\n"
-    "You are NOT drawing objects.\n"
-    "You are VISUALIZING IDEAS OVER TIME.\n"
+    "1. ALWAYS classify intent first\n"
+    "2. ALWAYS calculate auto_scaling\n"
+    "3. ALWAYS ensure objects fit in viewport\n"
+    "4. For CONCEPTUAL prompts, ALWAYS include explanatory text\n"
+    "5. You are NOT drawing objects—you are VISUALIZING IDEAS OVER TIME\n"
     "\n"
     "Output ONE valid JSON object and NOTHING ELSE.\n"
 )
@@ -218,7 +280,7 @@ class PromptExpansionError(Exception):
 import json
 
 def validate_expanded_prompt(text: str) -> None:
-    """Validate the expanded prompt is valid JSON and follows schema."""
+    """Validate the expanded prompt is valid JSON and follows enhanced schema."""
     if not text or not text.strip():
         raise PromptExpansionError("Expanded prompt is empty")
     
@@ -230,13 +292,17 @@ def validate_expanded_prompt(text: str) -> None:
     if "error" in data:
         raise PromptExpansionError(f"Model returned error: {data['error']}")
         
-    required_keys = ["entities", "intent_graph", "timeline"]
+    required_keys = ["complexity_assessment", "auto_scaling", "entities", "intent_graph", "timeline"]
     for key in required_keys:
         if key not in data:
             raise PromptExpansionError(f"Missing required key in blueprint: {key}")
             
     if "changes" not in data["intent_graph"]:
         raise PromptExpansionError("intent_graph must contain 'changes'")
+    
+    # Validate auto_scaling structure
+    if "default_size" not in data["auto_scaling"] or "text_size" not in data["auto_scaling"]:
+        raise PromptExpansionError("auto_scaling must contain 'default_size' and 'text_size'")
 
 def expand_prompt(user_prompt: str, max_retries: int = 3) -> str:
     """
@@ -307,19 +373,25 @@ def expand_prompt_with_fallback(user_prompt: str) -> str:
         logger.error(f"Primary prompt expansion failed: {e}")
         logger.info("Using fallback expansion...")
         
-        # Simple fallback expansion returning valid JSON schema
+        # Simple fallback expansion returning valid JSON schema with auto_scaling
         fallback_json = {
             "title": "Fallback Animation",
+            "complexity_assessment": "simple",
             "intent_confidence": 0.5,
             "duration_sec": 4.0,
             "canvas": {"width_units": 14, "height_units": 8},
+            "auto_scaling": {
+                "default_size": 1.5,
+                "text_size": 36,
+                "spacing": 2.25
+            },
             "entities": {
                 "fallback_circle": {
                     "semantic_role": "fallback object",
                     "visual_type": "shape",
                     "base_shape": "circle",
                     "initial_state": {
-                        "x": 0, "y": 0, "size": 1.0, "color": "BLUE", "opacity": 1.0
+                        "x": 0, "y": 0, "size": 1.5, "color": "BLUE", "opacity": 1.0
                     },
                     "persistent": true
                 }
@@ -346,11 +418,11 @@ def expand_prompt_with_fallback(user_prompt: str) -> str:
                 }
             ],
             "constraints": {
-                "max_entities": 6,
-                "max_changes": 12,
-                "max_duration_sec": 8
+                "max_entities": 10,
+                "max_changes": 15,
+                "max_duration_sec": 12
             },
-            "final_state": "Fallback due to expansion failure"
+            "final_state": "Fallback due to expansion failure - using simple centered circle"
         }
         
         return json.dumps(fallback_json)
