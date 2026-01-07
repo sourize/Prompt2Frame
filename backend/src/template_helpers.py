@@ -220,17 +220,17 @@ def generate_plot_points_code(coordinates: List[Tuple[float, float]], colors: Li
     color = colors[0] if colors else 'BLUE'
     
     # Generate points string
-    points_str = ', '.join([f'({x}, {y})' for x, y in coordinates])
+    points_list = ', '.join([f'({x}, {y})' for x, y in coordinates])
     
-    return f'''from manim import *
+    code = '''from manim import *
 
 class GeneratedScene(Scene):
     def construct(self):
         # Create axes with appropriate range
         axes = Axes(
-            x_range=[{x_range_min}, {x_range_max}, 1],
-            y_range=[{y_range_min}, {y_range_max}, 1],
-            axis_config={{"include_tip": True}},
+            x_range=[''' + str(x_range_min) + ''', ''' + str(x_range_max) + ''', 1],
+            y_range=[''' + str(y_range_min) + ''', ''' + str(y_range_max) + ''', 1],
+            axis_config={"include_tip": True},
             x_length=10,
             y_length=6
         )
@@ -241,14 +241,14 @@ class GeneratedScene(Scene):
         
         # Create dots for each point
         points = [
-            Dot(axes.c2p(x, y), color={color}, radius=0.1)
-            for x, y in [{points_str}]
+            Dot(axes.c2p(x, y), color=''' + color + ''', radius=0.1)
+            for x, y in [''' + points_list + ''']
         ]
         
         # Create labels for points
         labels = [
             Text(f"({x},{y})", font_size=20).next_to(dot, UP)
-            for dot, (x, y) in zip(points, [{points_str}])
+            for dot, (x, y) in zip(points, [''' + points_list + '''])
         ]
         
         # Animate
@@ -257,6 +257,8 @@ class GeneratedScene(Scene):
         self.play(*[Write(label) for label in labels])
         self.wait(2)
 '''
+    
+    return code
 
 
 # Basic plot template for when no coordinates are given
