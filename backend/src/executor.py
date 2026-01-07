@@ -340,15 +340,11 @@ def render_and_concat_all(
                 except Exception as e:
                     raise RenderError(f"Compilation failed: {str(e)}")
             
-            # Verify final video and check DURATION BOUND
+            # Verify final video and check FILE SIZE (Sanity)
             if not final_video_path.exists():
                 raise RenderError("Final video file was not created")
             
-            # Check duration (Max 6.0s)
-            MAX_DUR = 6.0
-            duration = _get_video_duration(final_video_path)
-            if duration > MAX_DUR:
-                 raise RenderError(f"Render exceeded duration limit: {duration:.2f}s (max {MAX_DUR}s).")
+            # (Duration limit removed per user request)
             
             file_size = final_video_path.stat().st_size
             if file_size < 1024:
