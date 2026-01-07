@@ -320,8 +320,9 @@ def render_and_concat_all(
             
             logger.info(f"Found {len(video_files)} video file(s)")
             
-            # BOUNDING: Max Clips
-            MAX_CLIPS = 6
+            # BOUNDING: Max Clips - increased to 10 to account for Manim's internal clip generation
+            # (Manim can produce more clips than self.play() calls due to wait() and rendering behavior)
+            MAX_CLIPS = 10
             if len(video_files) > MAX_CLIPS:
                 raise RenderError(f"Render exceeded safe limits: {len(video_files)} clips produced (max {MAX_CLIPS}). Reduce animation complexity.")
             
