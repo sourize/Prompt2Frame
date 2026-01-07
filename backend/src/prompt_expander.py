@@ -271,6 +271,24 @@ SYSTEM = (
     "5. You are NOT drawing objects—you are VISUALIZING IDEAS OVER TIME\n"
     "\n"
     "Output ONE valid JSON object and NOTHING ELSE.\n"
+    "\n"
+    "====================================================\n"
+    "JSON OUTPUT ENFORCEMENT (CRITICAL)\n"
+    "====================================================\n"
+    "\n"
+    "COMMON JSON ERRORS TO AVOID:\n"
+    "- Trailing commas in arrays or objects\n"
+    "- Missing quotes around property names\n"
+    "- Unescaped quotes in string values\n"
+    "- Missing closing braces or brackets\n"
+    "- Comments (not allowed in JSON)\n"
+    "\n"
+    "VERIFY before output:\n"
+    "✓ All property names have double quotes\n"
+    "✓ All strings use double quotes (not single)\n"
+    "✓ No trailing commas\n"
+    "✓ Properly nested braces and brackets\n"
+    "✓ Valid number formats (no NaN, Infinity)\n"
 )
 
 class PromptExpansionError(Exception):
@@ -337,9 +355,10 @@ def expand_prompt(user_prompt: str, max_retries: int = 3) -> str:
                 lambda: client.chat.completions.create(
                     model=MODEL_NAME,
                     messages=messages,
-                    temperature=0.2,  # Strict adherence to schema
-                    max_tokens=1200,
+                    temperature=0,  # Strict adherence - reduced from 0.2
+                    max_tokens=1500,  # Increased from 1200 for complex scenarios
                     top_p=1.0,
+                    response_format={"type": "json_object"}  # Force JSON mode
                 )
             )
             
