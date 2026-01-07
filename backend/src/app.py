@@ -19,8 +19,8 @@ from .errors import ErrorResponse, ErrorMessages, get_correlation_id
 from .circuit_breaker import CircuitBreakerOpen, groq_circuit_breaker
 from .cache import prompt_cache, video_cache, initialize_video_cache
 from .rate_limiter import check_rate_limit_middleware, rate_limiter
-from .prompt_expander import expand_prompt
-from .generator import generate_manim_code_with_fallback
+from .prompt_expander import expand_prompt_with_fallback
+from .generator import generate_code_with_retries
 from .executor import render_and_concat_all, MEDIA_ROOT
 
 # ------------------------------------------------------------
