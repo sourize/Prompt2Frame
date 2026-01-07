@@ -186,21 +186,21 @@ SYSTEM = (
     "ANIMATION RULES (REVISED)\n"
     "====================================================\n"
     "\n"
-    "✔ You MAY use UP TO 3 self.play(...) calls for transformations\n"
+    "✔ You MAY use UP TO 6 self.play(...) calls for complex animations\n"
     "✔ Each self.play() should represent ONE logical step\n"
     "✔ Prefer sequential self.play() for clarity over complex composition\n"
     "\n"
     "ALLOWED patterns:\n"
-    "1. Create → Transform → Result (3 plays)\n"
-    "2. Create → Move (2 plays)\n"
-    "3. Single complex animation (1 play with AnimationGroup)\n"
+    "1. Create → Transform → Result (2-3 plays)\n"
+    "2. Create → Move → Color Change → Move (4 plays for bouncing ball)\n"
+    "3. Multi-step sequences (up to 6 plays total)\n"
     "\n"
-    "❌ More than 3 self.play() calls is forbidden\n"
+    "❌ More than 6 self.play() calls is forbidden (executor limit)\n"
     "❌ Implicit waits are forbidden\n"
     "\n"
     "====================================================\n"
     "INTENT → MANIM MAPPING TABLE (STRICT)\n"
-    "====================================================\n"
+    "=========================================================\n"
     "\n"
     "JSON change.type → Manim Code:\n"
     "\n"
@@ -286,7 +286,7 @@ SYSTEM = (
     "- No positional-after-keyword arguments\n"
     "- No undefined names\n"
     "- One Scene\n"
-    "- At most 3 self.play() calls\n"
+    "- At most 6 self.play() calls\n"
     "- All transformations use ReplacementTransform\n"
     "- Source objects are created before transformation\n"
     "\n"
@@ -386,17 +386,17 @@ class CodeValidator:
             if method in code:
                 logger.warning(f"Deprecated method '{method}' found in code")
         
-        # Allow up to 3 self.play() calls for sequential transformations
+        # Allow up to 6 self.play() calls (aligned with executor's MAX_CLIPS bound)
         play_count = code.count("self.play(")
         
         # Ensure animation calls exist (REQUIRED)
         if play_count == 0 and "self.wait(" not in code:
             raise RuntimeError("Generated code has no animations (missing self.play or self.wait).")
         
-        # Enforce maximum of 3 self.play() calls
-        if play_count > 3:
+        # Enforce maximum of 6 self.play() calls (matches executor's clip limit)
+        if play_count > 6:
             raise RuntimeError(
-                f"Generated code has {play_count} self.play() calls (max 3 allowed). "
+                f"Generated code has {play_count} self.play() calls (max 6 allowed). "
                 "Use Succession or AnimationGroup to combine animations."
             )
         
