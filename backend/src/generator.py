@@ -53,7 +53,7 @@ CRITICAL RULES:
 2. Use class name: GeneratedScene(Scene) or GeneratedScene(ThreeDScene) for 3D
 3. Import: from manim import *
 4. Use standard Manim objects: Circle, Square, Line, Text, Dot, Arrow, Axes, etc.
-5. Common animations: Create(), Write(), ReplacementTransform(), FadeIn(), FadeOut()
+5. Common animations: Create(), FadeIn(), FadeOut(), ReplacementTransform()
 6. For motion: obj.animate.move_to(), MoveAlongPath()
 7. For rotation: Rotate(obj, angle=..., about_point=...)
 8. Use UP TO 6 self.play() calls
@@ -61,6 +61,10 @@ CRITICAL RULES:
 10. Ensure objects are VISIBLE (use colors like BLUE, RED, YELLOW, GREEN, not BLACK)
 11. Position objects within range: x=[-6,6], y=[-3,3]
 12. Extract specific parameters from the technical spec (coordinates, colors, sizes, counts)
+13. **FORBIDDEN DEPRECATED METHODS**: DO NOT USE ShowCreation, Write, FadeInFrom - these are DEPRECATED in Manim v0.17+
+    - Use Create() instead of ShowCreation()
+    - Use Create() instead of Write() for most cases
+    - Use FadeIn() instead of FadeInFrom()
 
 CUSTOMIZATION INSTRUCTIONS:
 - If the spec mentions specific coordinates, USE THEM EXACTLY
