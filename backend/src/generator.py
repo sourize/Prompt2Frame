@@ -253,10 +253,76 @@ SYSTEM = (
     "        # Timeline Phase 1: Create circle\n"
     "        self.play(Create(circle1))\n"
     "        \n"
-    "        # Timeline Phase 2: Transform circle to square\n"
     "        self.play(ReplacementTransform(circle1, square1))\n"
     "        \n"
     "        self.wait(1)\n"
+    "\n"
+    "====================================================\n"
+    "UNIVERSAL VISUAL PATTERN LIBRARY\n"
+    "====================================================\n"
+    "\n"
+    "When generating code for ANY concept, use these proven patterns:\n"
+    "\n"
+    "PATTERN 1: NODE-EDGE GRAPH (Networks, Trees, Graphs)\n"
+    "  Manim Objects: Circle (nodes), Line (edges), VGroup (grouping)\n"
+    "  Code Structure:\n"
+    "    nodes = VGroup(*[Circle(...).move_to([x, y, 0]) for ...])\n"
+    "    edges = VGroup(*[Line(n1.get_center(), n2.get_center()) for ...])\n"
+    "  Use for: neural networks, binary trees, state machines, molecule structures\n"
+    "\n"
+    "PATTERN 2: HIERARCHY (Org Charts, File Systems)\n"
+    "  Manim Objects: Rectangle or Circle (boxes), Line (connections)\n"
+    "  Code Structure:\n"
+    "    root = Rectangle(...).move_to([0, 2, 0])\n"
+    "    children = VGroup(*[Rectangle(...).move_to([x, 0, 0]) for x in positions])\n"
+    "    connections = VGroup(*[Line(root.get_bottom(), child.get_top()) for child in children])\n"
+    "  Use for: organizational charts, inheritance diagrams, directory trees\n"
+    "\n"
+    "PATTERN 3: FLOW/PIPELINE (Processes, Algorithms)\n"
+    "  Manim Objects: Rectangle (stages), Arrow (flow)\n"
+    "  Code Structure:\n"
+    "    stages = VGroup(*[Rectangle(...).move_to([i*2, 0, 0]) for i in range(n)])\n"
+    "    arrows = VGroup(*[Arrow(stages[i].get_right(), stages[i+1].get_left()) for i in range(n-1)])\n"
+    "  Use for: data pipelines, algorithm steps, transformation sequences\n"
+    "\n"
+    "PATTERN 4: GRID/ARRAY (Matrices, Board Games)\n"
+    "  Manim Objects: Square (cells), VGroup (rows/grid)\n"
+    "  Code Structure:\n"
+    "    grid = VGroup(*[\n"
+    "        VGroup(*[Square(side_length=0.5).move_to([x, y, 0]) for x in range(cols)])\n"
+    "        for y in range(rows)\n"
+    "    ])\n"
+    "  Use for: sorting visualizations, matrices, game boards, pixel arrays\n"
+    "\n"
+    "PATTERN 5: TEMPORAL SEQUENCE (Growth, Evolution)\n"
+    "  Manim Objects: Mobjects with ReplacementTransform\n"
+    "  Code Structure:\n"
+    "    state1 = Shape1(...)\n"
+    "    state2 = Shape2(...)\n"
+    "    self.play(Create(state1))\n"
+    "    self.play(ReplacementTransform(state1, state2))\n"
+    "  Use for: before/after, growth animations, evolutionary sequences\n"
+    "\n"
+    "PATTERN 6: COMPARISON (Side-by-Side)\n"
+    "  Manim Objects: Duplicate shapes with different properties\n"
+    "  Code Structure:\n"
+    "    option_a = VGroup(...).move_to(LEFT * 3)\n"
+    "    option_b = VGroup(...).move_to(RIGHT * 3)\n"
+    "    label_a = Text(\"A\").next_to(option_a, UP)\n"
+    "  Use for: A vs B comparisons, contrasting approaches, pros/cons\n"
+    "\n"
+    "====================================================\n"
+    "PATTERN SELECTION LOGIC\n"
+    "====================================================\n"
+    "\n"
+    "1. If prompt mentions \"network\", \"graph\", \"connected\", \"nodes\" → NODE-EDGE GRAPH\n"
+    "2. If prompt mentions \"hierarchy\", \"tree\", \"parent-child\", \"levels\" → HIERARCHY\n"
+    "3. If prompt mentions \"process\", \"pipeline\", \"flow\", \"algorithm\" → FLOW/PIPELINE\n"
+    "4. If prompt mentions \"grid\", \"matrix\", \"array\", \"board\" → GRID/ARRAY\n"
+    "5. If prompt mentions \"growth\", \"evolution\", \"before/after\", \"timeline\" → TEMPORAL SEQUENCE\n"
+    "6. If prompt mentions \"vs\", \"compare\", \"contrast\", \"difference\" → COMPARISON\n"
+    "\n"
+    "If unsure → Default to NODE-EDGE GRAPH (most flexible)\n"
     "\n"
     "====================================================\n"
     "PATH SAFETY RULES\n"
@@ -612,6 +678,80 @@ class FallbackScene(Scene):
             Create(text),
             run_time=1.0
         )
+        self.wait(1)
+
+====================================================
+GOLDEN EXAMPLE: NEURAL NETWORK (3 LAYERS)
+====================================================
+
+INPUT JSON:
+{
+  "complexity_assessment": "complex",
+  "entities": {
+    "layer1": { "visual_type": "group", ... },
+    "layer2": { "visual_type": "group", ... },
+    "layer3": { "visual_type": "group", ... },
+    "connections_1_2": { "visual_type": "group", ... },
+    "connections_2_3": { "visual_type": "group", ... }
+  },
+  "intent_graph": {
+    "changes": [
+      { "type": "create", "targets": ["layer1"] },
+      { "type": "create", "targets": ["connections_1_2"] },
+      { "type": "create", "targets": ["layer2"] },
+      { "type": "create", "targets": ["connections_2_3"] },
+      { "type": "create", "targets": ["layer3"] }
+    ]
+  }
+}
+
+CORRECT OUTPUT:
+
+from manim import *
+import numpy as np
+
+class GeneratedScene(Scene):
+    def construct(self):
+        neuron_radius = 0.25
+        layer_spacing = 3.0
+        
+        # Layer 1: 3 neurons at x=-3
+        layer1 = VGroup(*[
+            Circle(radius=neuron_radius).set_color(BLUE).move_to([-3, y, 0])
+            for y in [-1.5, 0, 1.5]
+        ])
+        
+        # Layer 2: 3 neurons at x=0
+        layer2 = VGroup(*[
+            Circle(radius=neuron_radius).set_color(GREEN).move_to([0, y, 0])
+            for y in [-1.5, 0, 1.5]
+        ])
+        
+        # Layer 3: 3 neurons at x=3
+        layer3 = VGroup(*[
+            Circle(radius=neuron_radius).set_color(RED).move_to([3, y, 0])
+            for y in [-1.5, 0, 1.5]
+        ])
+        
+        # Connections layer 1 → 2
+        connections_1_2 = VGroup(*[
+            Line(n1.get_center(), n2.get_center(), stroke_width=1).set_color(GRAY)
+            for n1 in layer1 for n2 in layer2
+        ])
+        
+        # Connections layer 2 → 3
+        connections_2_3 = VGroup(*[
+            Line(n1.get_center(), n2.get_center(), stroke_width=1).set_color(GRAY)
+            for n1 in layer2 for n2 in layer3
+        ])
+        
+        # Sequential animation
+        self.play(Create(layer1))
+        self.play(Create(connections_1_2))
+        self.play(Create(layer2))
+        self.play(Create(connections_2_3))
+        self.play(Create(layer3))
+        
         self.wait(1)
 """
         return fallback_code
