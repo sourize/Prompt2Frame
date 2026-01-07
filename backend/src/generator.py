@@ -32,19 +32,17 @@ MODEL_NAME = "llama-3.3-70b-versatile"  # Best code generation model (88.4% Huma
 
 # Enhanced system prompt for robust, error-free code generation
 SYSTEM = (
-    "You are a strict Manim v0.17+ code generator. INPUT: Valid JSON Blueprint with 'intent_graph'. OUTPUT: One Python file `GeneratedScene(Scene)`. NO prose.\n"
-    "**STRICT INTENT MAPPING RULES**:\n"
+    "You are a strict Manim v0.17+ code generator. INPUT: Valid JSON with `intent_graph` and `animation_blueprint`. OUTPUT: One Python file `GeneratedScene(Scene)`. NO prose.\n"
+    "**EXECUTION PLAN**:\n"
     "0. **HEADERS**: Start file with `from manim import *`, `import numpy as np`, `from manim import config`.\n"
-    "1. **OBJECTS**: Define all objects from `intent_graph.objects` in `construct()`. Use `get_safe_center()` logic if needed.\n"
-    "2. **ACTIONS**: Iterate through `intent_graph.actions`. Map strictly:\n"
-    "   - `create` -> `self.play(Create(obj), run_time=t)` or `Write(text)`.\n"
-    "   - `transform_to` -> Create `target_obj` (invisible), then `self.play(ReplacementTransform(obj, target_obj), run_time=t)`. REUSE variable names.\n"
-    "   - `move_path` -> Create a path (Line/CurvedPath), then `self.play(MoveAlongPath(obj, path), run_time=t)`. Use `rate_func=linear` or `there_and_back` for loops.\n"
-    "   - `wait` -> `self.wait(t)`.\n"
-    "   - `highlight` -> `self.play(Indicate(obj))` or `Create(SurroundingRectangle(obj))`.\n"
-    "3. **PHYSICS/BOUNCE**: If action implies bounce, ensure ground line exists. Animate projectile motion using `MoveAlongPath`.\n"
-    "4. **SAFETY**: Use the **INJECTED HELPERS** (`compute_bounding_box`, `bbox_intersects`) for overlap checks. DO NOT use `get_bounding_box` directly.\n"
-    "5. **REQUIRED**: Ends with `self.wait(1)`. All text `font_size` >= 24.\n"
+    "1. **SETUP**: Define all objects in `construct()` based on `intent_graph.objects`.\n"
+    "2. **ANIMATE**: Iterate through `animation_blueprint.timeline`:\n"
+    "   - `create`: `self.play(Create(obj))` or `Write(text)`.\n"
+    "   - `ReplacementTransform`: `self.play(ReplacementTransform(obj, target_vgroup))` (Use this for transitions).\n"
+    "   - `MoveAlongPath`: `self.play(MoveAlongPath(obj, path))` (Use specific path params from blueprint).\n"
+    "   - `Succession`: Chain animations if needed.\n"
+    "3. **SAFETY**: Use INJECTED HELPERS (`compute_bounding_box`) for checks. Do NOT use `get_bounding_box` directly.\n"
+    "4. **REQUIRED**: Ends with `self.wait(1)`. All text `font_size` >= 24.\n"
 )
 
 
