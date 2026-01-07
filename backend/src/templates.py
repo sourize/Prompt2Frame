@@ -3,9 +3,12 @@ Animation Templates - Proven Manim code patterns for common animations.
 
 This module contains working Manim code templates for the most common
 animation types. These are guaranteed to work and are visually correct.
+
+Now supports SMART TEMPLATES with parameter extraction from technical specs.
 """
 
-from typing import Callable, Dict, List
+from typing import Callable, Dict, List, Optional, Tuple
+import re
 
 
 # Template for circle to square transformation
@@ -194,8 +197,19 @@ class GeneratedScene(Scene):
         self.wait(1)
 '''
 
-# Template for function plot
-TEMPLATE_PLOT = '''from manim import *
+# Template for function plot (will be customized based on parameters)
+def TEMPLATE_PLOT_SMART(technical_spec: str) -> str:
+    """Smart plot template that extracts parameters and customizes."""
+    from .template_helpers import extract_parameters, generate_plot_points_code
+    
+    params = extract_parameters(technical_spec)
+    
+    # If coordinates are specified, use custom point plot
+    if params['coordinates']:
+        return generate_plot_points_code(params['coordinates'], params['colors'])
+    
+    # Otherwise use default parabola plot
+    return '''from manim import *
 
 class GeneratedScene(Scene):
     def construct(self):
@@ -297,9 +311,10 @@ TEMPLATE_REGISTRY: Dict[str, Dict] = {
         'description': 'Text writing and positioning'
     },
     'plot': {
-        'keywords': ['plot', 'graph', 'function', 'axes', 'curve'],
-        'code': TEMPLATE_PLOT,
-        'description': 'Mathematical function plot'
+        'keywords': ['plot', 'graph', 'coordinate', 'point', 'axes', 'curve', 'function'],
+        'code': None,  # Will use smart function
+        'smart_function': TEMPLATE_PLOT_SMART,
+        'description': 'Mathematical function plot or point plotting'
     },
     '3d_rotate': {
         'keywords': ['3d', 'rotate', 'cube', 'rotating'],
@@ -313,6 +328,8 @@ def match_template(technical_spec: str) -> str:
     """
     Find the best matching template based on keywords in the technical specification.
     
+    Supports both static templates and smart templates that customize based on parameters.
+    
     Args:
         technical_spec: Plain text technical specification from prompt_expander
         
@@ -323,17 +340,23 @@ def match_template(technical_spec: str) -> str:
     
     # Count keyword matches for each template
     best_match = None
+    best_match_smart_function = None
     max_matches = 0
     
     for template_name, template_info in TEMPLATE_REGISTRY.items():
         matches = sum(1 for keyword in template_info['keywords'] if keyword in spec_lower)
         if matches > max_matches:
             max_matches = matches
-            best_match = template_info['code']
+            best_match = template_info.get('code')
+            best_match_smart_function = template_info.get('smart_function')
     
-    # Return best match or fallback
-    if best_match and max_matches > 0:
-        return best_match
+    # Return best match (use smart function if available, otherwise static code)
+    if max_matches > 0:
+        if best_match_smart_function:
+            # Call smart function with technical spec to get customized code
+            return best_match_smart_function(technical_spec)
+        elif best_match:
+            return best_match
 
     return TEMPLATE_FALLBACK
 

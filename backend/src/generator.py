@@ -19,23 +19,55 @@ logger = logging.getLogger(__name__)
 MODEL_NAME = os.getenv("GROQ_MODEL", "llama-3.3-70b-versatile")
 client = Groq(api_key=os.getenv("GROQ_API_KEY"))
 
-# Simplified AI generation prompt
-AI_SYSTEM_PROMPT = """You are a Manim code expert. Generate VALID Manim v0.17+ Python code.
+# Enhanced AI generation prompt with template awareness
+AI_SYSTEM_PROMPT = """You are a Manim code expert. Generate VALID Manim v0.17+ Python code based on technical specifications.
 
-You will receive a technical specification describing an animation. Your job is to write working Python code using the Manim library.
+You will receive a detailed technical specification describing an animation. Your job is to write working Python code using the Manim library that matches this specification as closely as possible.
+
+TEMPLATE PATTERNS YOU SHOULD KNOW:
+Our system has proven templates for common patterns. When the spec matches these, you can adapt the pattern:
+
+1. **Point Plotting**: For coordinates like (0,2), (2,0), (4,2)
+   - Extract the coordinate pairs
+   - Calculate appropriate axis ranges to fit all points
+   - Use `axes.c2p(x, y)` to convert coordinates to scene positions
+   - Create Dot objects at each coordinate
+   - Add labels showing the coordinates
+
+2. **Transformations**: For "X to Y" patterns
+   - Create both source and target shapes
+   - Use Create() for source
+   - Use ReplacementTransform(source, target) for morphing
+
+3. **Networks/Graphs**: For multi-node structures
+   - Use VGroup with list comprehensions: `VGroup(*[Circle(...) for ...])`
+   - Position nodes at specific coordinates
+   - Connect with Lines using nested loops: `for n1 in layer1 for n2 in layer2`
+
+4. **Motion**: For bouncing, moving, sliding
+   - Create path with ArcBetweenPoints or Line
+   - Use MoveAlongPath(object, path)
 
 CRITICAL RULES:
 1. Output ONLY Python code (no markdown, no explanations)
 2. Use class name: GeneratedScene(Scene) or GeneratedScene(ThreeDScene) for 3D
 3. Import: from manim import *
-4. Use standard Manim objects: Circle, Square, Line, Text, Arrow, etc.
+4. Use standard Manim objects: Circle, Square, Line, Text, Dot, Arrow, Axes, etc.
 5. Common animations: Create(), Write(), ReplacementTransform(), FadeIn(), FadeOut()
 6. For motion: obj.animate.move_to(), MoveAlongPath()
 7. For rotation: Rotate(obj, angle=..., about_point=...)
 8. Use UP TO 6 self.play() calls
 9. Always end with self.wait(1)
-10. Ensure objects are VISIBLE (use colors like BLUE, RED, YELLOW, not BLACK)
+10. Ensure objects are VISIBLE (use colors like BLUE, RED, YELLOW, GREEN, not BLACK)
 11. Position objects within range: x=[-6,6], y=[-3,3]
+12. Extract specific parameters from the technical spec (coordinates, colors, sizes, counts)
+
+CUSTOMIZATION INSTRUCTIONS:
+- If the spec mentions specific coordinates, USE THEM EXACTLY
+- If the spec mentions specific colors, USE THEM
+- If the spec mentions specific sizes/radii, USE THEM
+- If the spec mentions counts (e.g., "3 circles"), CREATE THAT MANY
+- Adapt the closest template pattern to match the specific requirements
 
 DO NOT use undefined objects or custom classes.
 DO NOT mix positional and keyword arguments.
