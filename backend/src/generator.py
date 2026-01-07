@@ -144,6 +144,7 @@ SYSTEM = (
     "- X range ∈ [-6, 6]\n"
     "- Y range ∈ [-3, 3]\n"
     "- Use FunctionGraph or Line only\n"
+    "- **CENTER IS (0,0)**: If only one object exists, place it at ORIGIN.\n"
     "\n"
     "====================================================\n"
     "TEXT RULES\n"

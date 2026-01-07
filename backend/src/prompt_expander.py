@@ -181,6 +181,7 @@ SYSTEM = (
     "DEFAULT INFERENCES (DOMAIN-AGNOSTIC)\n"
     "====================================================\n"
     "\n"
+    "- If count is 1 → DEFAULT POSOTION IS (0,0) [CENTER]\n"
     "- If count is unspecified → assume 1 (or small set if plural noun)\n"
     "- If direction unspecified → left to right\n"
     "- If explanation requested → include text annotations\n"
