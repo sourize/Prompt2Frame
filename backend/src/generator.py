@@ -258,14 +258,9 @@ class CodeValidator:
             if method in code:
                 logger.warning(f"Deprecated method '{method}' found in code")
         
-        # Enforce EXACTLY ONE self.play() call (or just wait)
+        # Enforce ONE SCENE, but allow multiple self.play() calls (bounded by executor)
         play_count = code.count("self.play(")
-        if play_count > 1:
-            raise RuntimeError(
-                f"Constraint Violation: Found {play_count} self.play() calls. "
-                "You must use EXACTLY ONE self.play() call with strict AnimationGroup/Succession."
-            )
-            
+        
         # Ensure animation calls exist (REQUIRED)
         if play_count == 0 and "self.wait(" not in code:
             raise RuntimeError("Generated code has no animations (missing self.play or self.wait).")

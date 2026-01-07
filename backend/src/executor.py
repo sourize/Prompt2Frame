@@ -314,38 +314,48 @@ def render_and_concat_all(
                 raise RenderError(error_msg)
             
             # Find generated video files
-            video_files = list(media_dir.rglob("*.mp4"))
+            video_files = sorted(list(media_dir.rglob("*.mp4")), key=lambda f: f.stat().st_mtime)
             if not video_files:
                 raise RenderError(f"No video files generated in {media_dir}")
             
             logger.info(f"Found {len(video_files)} video file(s)")
             
+            # BOUNDING: Max Clips
+            MAX_CLIPS = 6
+            if len(video_files) > MAX_CLIPS:
+                raise RenderError(f"Render exceeded safe limits: {len(video_files)} clips produced (max {MAX_CLIPS}). Reduce animation complexity.")
+            
             # Define final output path
             final_video_path = final_output_dir / "output.mp4"
             
-            # STRICT: One Scene, One Video
             if len(video_files) == 1:
-                logger.info("Single video file verified. Copying to final location.")
+                # Direct copy for single clip
+                logger.info("Single clip detected. Copying to final output.")
                 shutil.copy2(video_files[0], final_video_path)
             else:
-                # REJECT multiple outputs
-                logger.error(f"Render failed: Expected 1 video, found {len(video_files)}")
-                raise RenderError(
-                    f"Generator Error: Manim produced {len(video_files)} partial videos. "
-                    "Refactor animation to use Succession/AnimationGroup inside ONE Scene."
-                )
+                # Concatenate multiple clips
+                logger.info(f"Concatenating {len(video_files)} clips...")
+                try:
+                    _concatenate_videos(video_files, final_video_path)
+                except Exception as e:
+                    raise RenderError(f"Compilation failed: {str(e)}")
             
-            # Verify final video exists and has reasonable size
+            # Verify final video and check DURATION BOUND
             if not final_video_path.exists():
                 raise RenderError("Final video file was not created")
             
+            # Check duration (Max 6.0s)
+            MAX_DUR = 6.0
+            duration = _get_video_duration(final_video_path)
+            if duration > MAX_DUR:
+                 raise RenderError(f"Render exceeded duration limit: {duration:.2f}s (max {MAX_DUR}s).")
+            
             file_size = final_video_path.stat().st_size
-            if file_size < 1024:  # Less than 1KB is suspicious
+            if file_size < 1024:
                 raise RenderError(f"Generated video file is too small ({file_size} bytes)")
             
             elapsed_time = time.time() - start_time
             logger.info(f"Rendering completed successfully in {elapsed_time:.2f}s, output: {final_video_path}")
-            logger.info(f"Final video size: {file_size / 1024 / 1024:.2f} MB")
             
             return final_video_path
             
@@ -357,7 +367,53 @@ def render_and_concat_all(
                     shutil.rmtree(final_output_dir)
                 except Exception:
                     pass
-            raise RenderError(f"Rendering pipeline failed: {str(e)}")
+            raise e  # Re-raise explicit RenderError or generic Exception as is
+
+def _get_video_duration(video_path: Path) -> float:
+    """Get video duration using ffprobe."""
+    try:
+        cmd = [
+            "ffprobe", 
+            "-v", "error", 
+            "-show_entries", "format=duration", 
+            "-of", "default=noprint_wrappers=1:nokey=1", 
+            str(video_path)
+        ]
+        result = subprocess.run(cmd, capture_output=True, text=True, check=True)
+        return float(result.stdout.strip())
+    except Exception as e:
+        logger.warning(f"Could not check duration: {e}")
+        return 0.0
+
+def _concatenate_videos(video_files: List[Path], output_path: Path):
+    """
+    Concatenate video files using ffmpeg concat demuxer.
+    Determinisitic linking of N clips into 1.
+    """
+    with tempfile.NamedTemporaryFile(mode='w', suffix='.txt', delete=False) as f:
+        for video_file in video_files:
+            # Escape path for ffmpeg safe filename
+            path_str = str(video_file.absolute()).replace("'", "'\\''")
+            f.write(f"file '{path_str}'\n")
+        list_file = f.name
+    
+    try:
+        cmd = [
+            "ffmpeg",
+            "-y",
+            "-f", "concat",
+            "-safe", "0",
+            "-i", list_file,
+            "-c", "copy",
+            str(output_path)
+        ]
+        
+        subprocess.run(cmd, check=True, capture_output=True)
+        
+    except subprocess.CalledProcessError as e:
+        raise RuntimeError(f"FFmpeg concat failed: {e.stderr.decode() if e.stderr else str(e)}")
+    finally:
+        os.unlink(list_file)
 
 def get_video_info(video_path: Path) -> dict:
     """
