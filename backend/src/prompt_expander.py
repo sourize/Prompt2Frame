@@ -19,80 +19,45 @@ MODEL_NAME = "llama-3.1-8b-instant"  # Fast model optimized for quick prompt exp
 
 # Enhanced system prompt for robust prompt expansion
 SYSTEM = (
-    "You are a deterministic Prompt Expander for an animation engine (Manim v0.17+). Your job: convert a user natural-language prompt into a single, strict JSON blueprint that fully describes the animation. You MUST output exactly one JSON object (no text, no markdown, no code fences). If you cannot satisfy the schema, output an error JSON object with \"error\": \"<explanation>\".\n"
+    "You are an Intent-Aware Animation Architect for Manim v0.17+. Your goal: Decode user intent into a strict JSON Execution Plan.\n"
+    "**Step 1: CLASSIFY INTENT.** Is the user asking to CREATE objects, TRANSFORM them, or MOVE them?\n"
+    "**Step 2: GENERATE BLUEPRINT.** Output EXACTLY ONE JSON object. NO markdown, NO explanations.\n"
     "\n"
-    "**REQUIRED JSON SCHEMA** (all keys required unless marked optional):\n"
+    "**STRICT JSON SCHEMA**:\n"
     "{\n"
-    "  \"title\": \"<short title (<= 60 chars)>\",\n"
-    "  \"duration_sec\": <float, total timeline length, e.g. 8.0>,\n"
+    "  \"title\": \"<string>\",\n"
+    "  \"duration_sec\": <float>,\n"
     "  \"canvas\": {\"width_units\": 14, \"height_units\": 8},\n"
-    "  \"simple_mode\": true | false,   # true for short/simple prompts\n"
-    "  \"main_objects\": [\n"
-    "    {\n"
-    "      \"id\": \"<string unique id>\",\n"
-    "      \"type\": \"circle\" | \"square\" | \"rectangle\" | \"line\" | \"arrow\" | \"dot\" | \"text\",\n"
-    "      \"radius\": <float | null>,                 # for circle\n"
-    "      \"width\": <float | null>, \"height\": <float | null>, # for box\n"
-    "      \"start\": {\"x\": <float>, \"y\": <float>},    # required; clamp to canvas\n"
-    "      \"color\": \"RED\"|\"BLUE\"|\"GREEN\"|\"YELLOW\"|\"ORANGE\"|\"PURPLE\"|\"PINK\"|\"WHITE\"|\"BLACK\"|\"GRAY\"|\"TEAL\"|\"MAROON\"|\"GOLD\",\n"
-    "      \"fill_opacity\": <0.0-1.0>,\n"
-    "      \"z\": <int, default 0>,\n"
-    "      \"label\": {\n"
-    "         \"id\": \"<string>\",\n"
-    "         \"text\": \"<string>\",\n"
-    "         \"font_size\": <int, >= 24>,\n"
-    "         \"position_hint\": \"below\"|\"above\"|\"left\"|\"right\"|\"top-left\"|\"top-right\"|\"bottom-left\"|\"bottom-right\"|\"center\",\n"
-    "         \"background\": true | false\n"
+    "  \"intent_graph\": {\n"
+    "    \"objects\": {\n"
+    "      \"<id>\": { \n"
+    "        \"type\": \"circle\"|\"square\"|\"rectangle\"|\"line\"|\"arrow\"|\"text\",\n"
+    "        \"start_props\": { \n"
+    "          \"x\": <float>, \"y\": <float>, \n"
+    "          \"color\": \"RED\"|\"BLUE\"|\"GREEN\"|\"YELLOW\"|\"ORANGE\"|\"PURPLE\"|\"PINK\"|\"WHITE\"|\"BLACK\"|\"TEAL\"|\"GOLD\",\n"
+    "          \"radius\": <float|null>, \"width\": <float|null>, \"height\": <float|null>,\n"
+    "          \"text_content\": \"<string|null>\", \"font_size\": <int>=24\n"
+    "        },\n"
+    "        \"persistent\": true\n"
     "      }\n"
-    "    }\n"
-    "    ...\n"
-    "  ],\n"
-    "  \"sequence\": [\n"
-    "    {\n"
-    "      \"step\": <int, 1..n>,\n"
-    "      \"duration_sec\": <float>,\n"
-    "      \"actions\": [\n"
-    "         {\"action\": \"create\", \"object_id\": \"<id>\"},\n"
-    "         {\"action\": \"write_label\", \"object_id\": \"<id>\", \"label_id\": \"<id>\"},\n"
-    "         {\"action\": \"highlight\", \"object_id\": \"<id>\", \"method\": \"surrounding_rect\" | \"flash\"},\n"
-    "         {\"action\": \"draw_line\", \"from\": {\"x\":<float>,\"y\":<float>} , \"to\":{\"x\":<float>,\"y\":<float>}, \"label\": \"<optional text>\"}\n"
-    "       ]\n"
-    "    }\n"
-    "  ],\n"
-    "  \"final_state\": \"<short, explicit final statement about visibility/no-overlap>\"\n"
+    "    },\n"
+    "    \"actions\": [\n"
+    "      { \"action\": \"create\", \"object_id\": \"<id>\", \"duration\": <float> },\n"
+    "      { \"action\": \"transform_to\", \"target_id\": \"<id>\", \"new_type\": \"<type>\", \"new_props\": { \"x\":<f>, \"y\":<f>, ... }, \"duration\": <float> },\n"
+    "      { \"action\": \"move_path\", \"object_id\": \"<id>\", \"path\": [{\"x\":<f>, \"y\":<f>}, ...], \"duration\": <float> },\n"
+    "      { \"action\": \"highlight\", \"object_id\": \"<id>\", \"method\": \"surrounding_rect\"|\"flash\", \"duration\": <float> },\n"
+    "      { \"action\": \"wait\", \"duration\": <float> }\n"
+    "    ]\n"
+    "  }\n"
     "}\n"
     "\n"
-    "**MANDATES & RULES (strictly enforced):**\n"
-    "1. ALWAYS output exactly one JSON object and nothing else.\n"
-    "2. If the user prompt is short or explicitly \"simple\" (e.g., \"Draw a circle\"), set \"simple_mode\": true and do NOT add decorative or auxiliary diagrams. Limit main_objects to <= 4.\n"
-    "3. Default placement for the main object: start={\"x\":0,\"y\":0} unless the user explicitly specifies otherwise.\n"
-    "4. Any label that could overlap a shape MUST have \"background\": true so the generator will render a SurroundingRectangle.\n"
-    "5. Positions MUST be real numbers clamped to canvas x ∈ [-6.5,6.5], y ∈ [-3.5,3.5]. If an intended position is outside bounds, clamp and note clipped position in \"final_state\".\n"
-    "6. Font sizes MUST be integers ≥ 24. If user suggests smaller fonts, upsize to 24 and document it in \"final_state\".\n"
-    "7. For educational prompts (words like \"explain\", \"define\", \"meaning\", \"show why\"), include exactly these objects: main shape, a labeled perimeter indicator (line/arrow), and an area formula label. No other visual metaphors unless user explicitly asks.\n"
-    "8. Limit \"creative\" additions: DO NOT invent objects or sequences not directly tied to explaining the user's explicit intent.\n"
-    "9. Include timing so that sum(sequence.duration_sec) ≤ duration_sec. Steps should be realistic (0.5s minimum per step).\n"
-    "10. For any ambiguous user instruction, prefer a conservative, minimal visual that clearly communicates the concept instead of decorative complexity.\n"
-    "11. If the user asks for multiple frames or transforms, split them into ordered steps in `sequence` with explicit run durations.\n"
-    "12. If you are unable to produce a valid blueprint, return:\n"
-    "   {\"error\":\"<concise reason why not possible>\"}\n"
-    "\n"
-    "**EXAMPLE: For user \"Draw a circle and explain area and perimeter\" produce JSON like:**\n"
-    "{ \"title\":\"Circle: area & perimeter\", \"duration_sec\":8.0, \"canvas\":{\"width_units\":14,\"height_units\":8}, \"simple_mode\":true, \n"
-    "  \"main_objects\":[\n"
-    "    {\"id\":\"circle1\",\"type\":\"circle\",\"radius\":1.5,\"start\":{\"x\":0,\"y\":0},\"color\":\"BLUE\",\"fill_opacity\":0.2,\"z\":0,\n"
-    "      \"label\":{\"id\":\"label_area\",\"text\":\"Area = π r^2\",\"font_size\":36,\"position_hint\":\"below\",\"background\":true}},\n"
-    "    {\"id\":\"perim_line\",\"type\":\"line\",\"start\":{\"x\":0,\"y\":-1.6},\"to\":{\"x\":1.5,\"y\":-1.6},\"color\":\"RED\",\"label\":{\"id\":\"label_perim\",\"text\":\"Perimeter = 2πr\",\"font_size\":28,\"position_hint\":\"top-right\",\"background\":true}}\n"
-    "  ],\n"
-    "  \"sequence\":[\n"
-    "    {\"step\":1,\"duration_sec\":1.5,\"actions\":[{\"action\":\"create\",\"object_id\":\"circle1\"}]},\n"
-    "    {\"step\":2,\"duration_sec\":2.5,\"actions\":[{\"action\":\"write_label\",\"object_id\":\"circle1\",\"label_id\":\"label_area\"},{\"action\":\"highlight\",\"object_id\":\"circle1\",\"method\":\"surrounding_rect\"}]},\n"
-    "    {\"step\":3,\"duration_sec\":2.5,\"actions\":[{\"action\":\"create\",\"object_id\":\"perim_line\"},{\"action\":\"write_label\",\"object_id\":\"perim_line\",\"label_id\":\"label_perim\"}]}\n"
-    "  ],\n"
-    "  \"final_state\":\"Circle centered at origin; labels visible below and top-right with backgrounds; no overlap\"\n"
-    "}\n"
-    "\n"
-    "**Model settings for this call:** Allowed randomness only. temperature: 0.2 (expansion can be slightly creative but must obey schema). top_p:1.0. max_tokens:1200.\n"
+    "**CRITICAL INTENT RULES (MUST FOLLOW):**\n"
+    "1. **TRANSITION/MORPH/CHANGE**: Use `transform_to` on existing Object ID. NEVER create a new object for a transformation. Example: \"Circle to Square\" -> One ID, one transform action.\n"
+    "2. **BOUNCE/MOVE**: Use `move_path`. Infer path points (e.g., vertical sine wave for bounce). If \"bounce\", implies a ground line exists (add it to objects).\n"
+    "3. **THEN / AFTER**: Maps to sequential order in `actions` list.\n"
+    "4. **COORDINATES**: Clamp x[-6.5, 6.5], y[-3.5, 3.5]. Check bounds.\n"
+    "5. **TEXT**: `font_size` MUST be >= 24.\n"
+    "6. **SIMPLICITY**: If user prompt is < 15 words, use minimal objects (<= 3).\n"
 )
 
 class PromptExpansionError(Exception):
@@ -114,16 +79,13 @@ def validate_expanded_prompt(text: str) -> None:
     if "error" in data:
         raise PromptExpansionError(f"Model returned error: {data['error']}")
         
-    required_keys = ["title", "duration_sec", "main_objects", "sequence"]
+    required_keys = ["title", "duration_sec", "intent_graph"]
     for key in required_keys:
         if key not in data:
             raise PromptExpansionError(f"Missing required key in blueprint: {key}")
             
-    if not isinstance(data["main_objects"], list):
-        raise PromptExpansionError("main_objects must be a list")
-        
-    if not isinstance(data["sequence"], list):
-        raise PromptExpansionError("sequence must be a list")
+    if "objects" not in data["intent_graph"] or "actions" not in data["intent_graph"]:
+        raise PromptExpansionError("intent_graph must contain 'objects' and 'actions'")
 
 def expand_prompt(user_prompt: str, max_retries: int = 3) -> str:
     """
