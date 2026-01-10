@@ -48,7 +48,7 @@ const CustomSlider = ({
     );
 };
 
-const VideoPlayer = ({ src, onError, onDownload }: { src: string; onError?: () => void; onDownload?: () => void }) => {
+const VideoPlayer = ({ src, onError, onDownload }: { src: string; onError?: (e: any) => void; onDownload?: () => void }) => {
     const videoRef = useRef<HTMLVideoElement>(null);
     const [isPlaying, setIsPlaying] = useState(false);
     const [progress, setProgress] = useState(0);

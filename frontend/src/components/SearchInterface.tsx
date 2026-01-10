@@ -297,7 +297,7 @@ const SearchInterface = ({ loading, setLoading }: { loading: boolean; setLoading
               transition={{ duration: 0.5 }}
               className="w-full space-y-6"
             >
-              <VideoPlayer src={videoUrl} onError={() => handleVideoError({} as any)} onDownload={handleDownload} />
+              <VideoPlayer src={videoUrl} onError={(e: any) => handleVideoError(e)} onDownload={handleDownload} />
 
               <div className="flex justify-center">
                 <HoverButton
