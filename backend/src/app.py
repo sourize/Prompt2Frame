@@ -8,7 +8,7 @@ from typing import Dict, Any, Optional
 from pathlib import Path
 
 from fastapi import FastAPI, HTTPException, Request, status, BackgroundTasks, Depends
-from fastapi.responses import JSONResponse, FileResponse
+from fastapi.responses import JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 from starlette.middleware.base import BaseHTTPMiddleware
 from pydantic import BaseModel, Field

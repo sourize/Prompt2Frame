@@ -27,8 +27,8 @@ import {
   Circle
 } from "lucide-react";
 
-// Point this at your local proxy which forwards to the backend
-const BACKEND_URL = '/api'; // Relative path for Vercel/proxied requests
+// Backend URL configuration
+const BACKEND_URL = import.meta.env.VITE_BACKEND_URL || 'http://localhost:7860';
 
 const SearchInterface = ({ loading, setLoading }: { loading: boolean; setLoading: (val: boolean) => void }) => {
   const [prompt, setPrompt] = useState('');

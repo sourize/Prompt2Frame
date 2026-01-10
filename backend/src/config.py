@@ -67,9 +67,9 @@ class Settings(BaseModel):
         try:
             return cls(
                 groq_api_key=os.getenv("GROQ_API_KEY", ""),
-                port=int(os.getenv("PORT", "5000")),
+                port=int(os.getenv("PORT", "7860")),
                 debug=os.getenv("DEBUG", "false").lower() in ("true", "1", "yes"),
-                allowed_origins=os.getenv("ALLOWED_ORIGINS", "http://localhost:5173"),
+                allowed_origins=os.getenv("ALLOWED_ORIGINS", "*"),
                 max_concurrent_requests=int(os.getenv("MAX_CONCURRENT_REQUESTS", "2")),
                 request_timeout=int(os.getenv("REQUEST_TIMEOUT", "300")),
                 video_cleanup_age_hours=int(os.getenv("VIDEO_CLEANUP_AGE_HOURS", "24")),
