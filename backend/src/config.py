@@ -21,12 +21,12 @@ class Settings(BaseModel):
     groq_api_key: str = Field(..., min_length=20, description="Groq API key for LLM services")
     
     # Server Configuration
-    port: int = Field(default=5000, ge=1024, le=65535, description="Server port")
+    port: int = Field(default=7860, ge=1024, le=65535, description="Server port")
     debug: bool = Field(default=False, description="Enable debug mode")
     
     # Security 
     allowed_origins: List[str] = Field(
-        default=["http://localhost:5173"],
+        default=["*"],
         description="Allowed CORS origins"
     )
     

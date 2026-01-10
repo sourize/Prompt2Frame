@@ -455,21 +455,6 @@ async def get_metrics():
         }
     }
 
-@app.get("/debug/files")
-async def debug_files():
-    """List files in media directory for debugging 404s."""
-    files = []
-    try:
-        for item in MEDIA_ROOT.rglob("*"):
-             if item.is_file():
-                 files.append({
-                     "path": str(item.relative_to(MEDIA_ROOT)),
-                     "size": item.stat().st_size,
-                     "age": time.time() - item.stat().st_mtime
-                 })
-    except Exception as e:
-        return {"error": str(e)}
-    return {"media_root": str(MEDIA_ROOT), "files": files, "count": len(files)}
 
 # ------------------------------------------------------------
 # Generate animation endpoint
@@ -667,38 +652,15 @@ async def generate_animation(
         )
 
 # ------------------------------------------------------------
-# Serve generated video files
+# Static File Serving (Robust)
 # ------------------------------------------------------------
-@app.get("/media/videos/{path:path}")
-async def serve_video(path: str):
-    """Serve generated video files with proper headers."""
-    file_path = MEDIA_ROOT / path
+from fastapi.staticfiles import StaticFiles
 
-    if not file_path.exists():
-        logger.warning(f"Video file not found: {file_path}")
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Video file not found"
-        )
+# Ensure media root exists
+MEDIA_ROOT.mkdir(parents=True, exist_ok=True)
 
-    if not file_path.is_file():
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Invalid file path"
-        )
-
-    file_size = file_path.stat().st_size
-
-    return FileResponse(
-        str(file_path),
-        media_type="video/mp4",
-        headers={
-            "Cache-Control": "public, max-age=3600",
-            "Accept-Ranges": "bytes",
-            "Content-Length": str(file_size),
-            "X-Content-Type-Options": "nosniff"
-        }
-    )
+# Mount media directory with CORS support implicitly handled by middleware
+app.mount("/media/videos", StaticFiles(directory=str(MEDIA_ROOT)), name="videos")
 
 # ------------------------------------------------------------
 # Enhanced exception handlers with structured responses

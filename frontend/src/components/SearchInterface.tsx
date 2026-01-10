@@ -108,11 +108,30 @@ const SearchInterface = ({ loading, setLoading }: { loading: boolean; setLoading
         await new Promise(resolve => setTimeout(resolve, 500));
       }
 
-      // Use backend URL from env or default to localhost, then append the relative media path
+      // Use backend URL from env or default to localhost
       const backendHost = import.meta.env.VITE_BACKEND_URL || 'http://localhost:7860';
       const fullUrl = `${backendHost}${returnedUrl}`;
       console.log('Video URL:', fullUrl);
-      setVideoUrl(fullUrl);
+
+      // Handle Private HF Spaces by fetching with token
+      const hfToken = import.meta.env.VITE_HF_TOKEN;
+      if (hfToken) {
+        try {
+          const videoRes = await fetch(fullUrl, {
+            headers: { Authorization: `Bearer ${hfToken}` }
+          });
+          if (!videoRes.ok) throw new Error(`Video fetch failed: ${videoRes.statusText}`);
+          const blob = await videoRes.blob();
+          const objectUrl = URL.createObjectURL(blob);
+          setVideoUrl(objectUrl);
+        } catch (e) {
+          console.error("Failed to fetch private video:", e);
+          // Fallback to direct URL if fetch fails
+          setVideoUrl(fullUrl);
+        }
+      } else {
+        setVideoUrl(fullUrl);
+      }
 
       toast({
         title: "🎉 Success!",
