@@ -83,12 +83,16 @@ const SearchInterface = ({ loading, setLoading }: { loading: boolean; setLoading
         description: "This may take a moment...",
       });
 
+      const token = import.meta.env.VITE_HF_TOKEN;
       const response = await axios.post(
         `${BACKEND_URL}/generate`,
         {
           prompt,
           quality: 'm',
           timeout: 800
+        },
+        {
+          headers: token ? { Authorization: `Bearer ${token}` } : {}
         }
       );
 
