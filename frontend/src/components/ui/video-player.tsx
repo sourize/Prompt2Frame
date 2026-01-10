@@ -126,7 +126,7 @@ const VideoPlayer = ({ src, onError, onDownload }: { src: string; onError?: (e: 
             transition={{ duration: 0.5 }}
             onMouseEnter={() => setShowControls(true)}
             onMouseLeave={() => setShowControls(false)}
-            onClick={() => setShowControls(true)} // Toggle controls on tap anywhere on component
+            onClick={() => setShowControls(prev => !prev)} // Toggle controls on tap anywhere on component
         >
             <video
                 ref={videoRef}

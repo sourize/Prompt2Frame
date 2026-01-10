@@ -57,11 +57,6 @@ const SearchInterface = ({ loading, setLoading }: { loading: boolean; setLoading
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!prompt.trim()) {
-      toast({
-        title: "Empty prompt",
-        description: "Please enter a prompt to generate an animation.",
-        variant: "destructive",
-      });
       return;
     }
     setLoading(true);
@@ -78,10 +73,6 @@ const SearchInterface = ({ loading, setLoading }: { loading: boolean; setLoading
     }, 2000); // Faster updates (2s)
 
     try {
-      toast({
-        title: "✨ Generating animation",
-        description: "This may take a moment...",
-      });
 
       const token = import.meta.env.VITE_HF_TOKEN;
       const response = await axios.post(
@@ -137,19 +128,10 @@ const SearchInterface = ({ loading, setLoading }: { loading: boolean; setLoading
         setVideoUrl(fullUrl);
       }
 
-      toast({
-        title: "🎉 Success!",
-        description: "Your animation is ready!",
-      });
     } catch (err: any) {
       clearInterval(stepInterval);
       console.error('Error:', err);
       setError(err.response?.data?.detail?.message || err.response?.data?.detail || 'Failed to generate animation. Please try again.');
-      toast({
-        title: "Generation failed",
-        description: err.response?.data?.detail?.message || 'Failed to generate animation',
-        variant: "destructive",
-      });
     } finally {
       setLoading(false);
     }
