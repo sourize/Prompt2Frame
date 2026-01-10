@@ -108,8 +108,9 @@ const SearchInterface = ({ loading, setLoading }: { loading: boolean; setLoading
         await new Promise(resolve => setTimeout(resolve, 500));
       }
 
-      // Use backend URL directly (backend serves media via static mounting)
-      const fullUrl = `http://localhost:7860${returnedUrl}`;
+      // Use backend URL from env or default to localhost, then append the relative media path
+      const backendHost = import.meta.env.VITE_BACKEND_URL || 'http://localhost:7860';
+      const fullUrl = `${backendHost}${returnedUrl}`;
       console.log('Video URL:', fullUrl);
       setVideoUrl(fullUrl);
 
