@@ -120,7 +120,7 @@ const VideoPlayer = ({ src, onError, onDownload }: { src: string; onError?: () =
 
     return (
         <motion.div
-            className="relative w-full max-w-4xl mx-auto rounded-xl overflow-hidden bg-[#11111198] shadow-[0_0_20px_rgba(0,0,0,0.2)] backdrop-blur-sm group border border-white/10"
+            className="relative w-full max-w-4xl mx-auto rounded-3xl overflow-hidden bg-[#11111198] shadow-[0_0_20px_rgba(0,0,0,0.2)] backdrop-blur-sm group border border-white/40"
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ duration: 0.5 }}

@@ -1,8 +1,8 @@
 import React, { useState, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import axios from 'axios';
+import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
-import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent } from "@/components/ui/card";
 import { toast } from "@/hooks/use-toast";
@@ -10,6 +10,12 @@ import VideoGenerationPlan from "@/components/ui/video-generation-plan";
 import { AlertCard } from "@/components/ui/alert-card";
 import VideoPlayer from "@/components/ui/video-player";
 import { HoverButton } from "@/components/ui/hover-button";
+import {
+  PromptInput,
+  PromptInputActions,
+  PromptInputTextarea,
+} from "@/components/ui/prompt-input";
+import { PromptSuggestion } from "@/components/ui/prompt-suggestion";
 import {
   ArrowRight,
   Download,
@@ -69,7 +75,7 @@ const SearchInterface = ({ loading, setLoading }: { loading: boolean; setLoading
     // Start the loading steps animation
     const stepInterval = setInterval(() => {
       setLoadingStep(prev => (prev + 1) % loadingSteps.length);
-    }, 4000); // Change step every 4 seconds
+    }, 2000); // Faster updates (2s)
 
     try {
       toast({
@@ -185,87 +191,69 @@ const SearchInterface = ({ loading, setLoading }: { loading: boolean; setLoading
           </div>
         </motion.div>
 
-        {/* Premium Search Input */}
+        {/* Premium Search Input and Suggestions */}
         <motion.div
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.8, delay: 0.1, ease: [0.16, 1, 0.3, 1] }}
-          className="w-full"
+          className="w-full space-y-4"
         >
-          <form onSubmit={handleSubmit} className="w-full">
-            <div className="relative glass-card rounded-xl p-0.5 smooth-hover">
-              <div className="relative bg-gray-900/50 rounded-xl">
-                <Textarea
-                  ref={inputRef}
-                  value={prompt}
-                  onChange={(e) => setPrompt(e.target.value)}
-                  placeholder="Describe the animation you want to create..."
-                  className="w-full bg-transparent border-0 text-white placeholder-gray-400 resize-none px-4 sm:px-5 py-3 sm:py-4 pr-12 sm:pr-14 text-sm leading-relaxed focus:ring-0 focus:outline-none min-h-[60px] rounded-xl"
-                  rows={1}
-                  style={{
-                    minHeight: '60px',
-                    maxHeight: '180px',
-                    height: 'auto',
-                  }}
-                  onInput={(e) => {
-                    const target = e.target as HTMLTextAreaElement;
-                    target.style.height = '60px';
-                    const newHeight = Math.min(target.scrollHeight, 180);
-                    target.style.height = `${newHeight}px`;
-                  }}
-                />
-
-                {/* Submit button - larger touch target on mobile */}
-                <div className="absolute right-2 sm:right-3 bottom-2 sm:bottom-3">
-                  <Button
-                    type="submit"
-                    disabled={loading || !prompt.trim()}
-                    className="h-10 w-10 sm:h-9 sm:w-9 p-0 bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-500 hover:to-purple-500 text-white rounded-lg disabled:opacity-50 disabled:cursor-not-allowed shadow-md transition-all duration-200 active:scale-95"
-                  >
-                    {loading ? (
-                      <motion.div
-                        animate={{ rotate: 360 }}
-                        transition={{ repeat: Infinity, duration: 1, ease: "linear" }}
-                      >
-                        <Circle className="h-5 w-5" />
-                      </motion.div>
-                    ) : (
-                      <ArrowRight className="h-5 w-5" />
-                    )}
-                  </Button>
-                </div>
-              </div>
-            </div>
-          </form>
-        </motion.div>
-
-        {/* Enhanced Example Prompts - responsive grid */}
-        {!videoUrl && !loading && (
-          <motion.div
-            initial={{ opacity: 0, y: 20 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.8, delay: 0.2, ease: [0.16, 1, 0.3, 1] }}
-            className="space-y-2 sm:space-y-3"
-          >
-            <p className="text-xs uppercase tracking-wide text-gray-400 font-medium mb-2">Try these examples</p>
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-              {examplePrompts.map((example, index) => (
-                <motion.button
-                  key={index}
-                  onClick={() => setPrompt(example)}
-                  className="group glass-card rounded-lg p-3 text-left smooth-hover active:scale-98 touch-manipulation"
-                  whileHover={{ scale: 1.02 }}
-                  whileTap={{ scale: 0.98 }}
+          <div className="relative">
+            <PromptInput
+              value={prompt}
+              onValueChange={setPrompt}
+              onSubmit={() => handleSubmit({ preventDefault: () => { } } as React.FormEvent)}
+              loading={loading}
+              className="rounded-3xl border border-white/40 bg-black/40 backdrop-blur-md shadow-2xl focus-within:border-indigo-500/50 transition-all duration-300"
+            >
+              <PromptInputTextarea
+                ref={inputRef}
+                placeholder="Describe the animation you want to create..."
+                className="text-white placeholder:text-gray-500 min-h-[40px] py-3 px-6 sm:text-base !bg-transparent !border-0 focus:ring-0 shadow-none ring-0 focus-visible:ring-0"
+                style={{ backgroundColor: 'transparent', border: 'none', boxShadow: 'none' }}
+              />
+              <PromptInputActions className="justify-end pt-2 pb-3 pr-3">
+                <Button
+                  onClick={() => handleSubmit({ preventDefault: () => { } } as React.FormEvent)}
+                  disabled={loading || !prompt.trim()}
+                  className={cn(
+                    "h-10 w-10 p-0 rounded-xl transition-all duration-200",
+                    prompt.trim()
+                      ? "bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-500 hover:to-purple-500 text-white shadow-lg shadow-indigo-500/20"
+                      : "bg-white/10 text-gray-500 hover:bg-white/20"
+                  )}
                 >
-                  <div className="flex items-start gap-2.5">
-                    <Zap className="w-3.5 h-3.5 text-indigo-300 mt-0.5 flex-shrink-0" />
-                    <span className="text-xs text-gray-100 leading-relaxed">{example}</span>
-                  </div>
-                </motion.button>
+                  {loading ? (
+                    <motion.div
+                      animate={{ rotate: 360 }}
+                      transition={{ repeat: Infinity, duration: 1, ease: "linear" }}
+                    >
+                      <Circle className="h-5 w-5" />
+                    </motion.div>
+                  ) : (
+                    <ArrowRight className="h-5 w-5" />
+                  )}
+                </Button>
+              </PromptInputActions>
+            </PromptInput>
+          </div>
+
+          {/* Suggestions - Only show when no video */}
+          {!videoUrl && !loading && (
+            <div className="flex flex-wrap gap-2 justify-center px-4">
+              {examplePrompts.map((example) => (
+                <PromptSuggestion
+                  key={example}
+                  onClick={() => setPrompt(example)}
+                  variant="outline"
+                  className="bg-white/5 border-white/10 hover:bg-white/10 text-gray-300 hover:text-white transition-colors rounded-full"
+                >
+                  {example}
+                </PromptSuggestion>
               ))}
             </div>
-          </motion.div>
-        )}
+          )}
+        </motion.div>
 
         {/* Video Generation Plan - Shows during loading BELOW input */}
         <AnimatePresence>
