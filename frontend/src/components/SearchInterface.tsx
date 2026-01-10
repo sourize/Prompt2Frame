@@ -6,6 +6,10 @@ import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent } from "@/components/ui/card";
 import { toast } from "@/hooks/use-toast";
+import VideoGenerationPlan from "@/components/ui/video-generation-plan";
+import { AlertCard } from "@/components/ui/alert-card";
+import VideoPlayer from "@/components/ui/video-player";
+import { HoverButton } from "@/components/ui/hover-button";
 import {
   ArrowRight,
   Download,
@@ -26,6 +30,7 @@ const SearchInterface = ({ loading, setLoading }: { loading: boolean; setLoading
   const [error, setError] = useState('');
   const [loadingStep, setLoadingStep] = useState(0);
   const videoRef = useRef<HTMLVideoElement>(null);
+  const inputRef = useRef<HTMLTextAreaElement>(null);
 
   // Loading steps with their descriptions
   const loadingSteps = [
@@ -84,8 +89,21 @@ const SearchInterface = ({ loading, setLoading }: { loading: boolean; setLoading
       clearInterval(stepInterval);
 
       const returnedUrl: string = response.data.videoUrl;
-      // Use the media proxy to fetch the video securely
-      const fullUrl = `/api/media?path=${encodeURIComponent(returnedUrl)}&t=${Date.now()}`;
+
+      // Complete remaining steps quickly before showing video
+      const currentStepAtCompletion = loadingStep;
+      if (currentStepAtCompletion < 3) {
+        // Quickly show remaining steps
+        for (let i = currentStepAtCompletion + 1; i <= 3; i++) {
+          await new Promise(resolve => setTimeout(resolve, 300)); // 300ms per step
+          setLoadingStep(i);
+        }
+        // Brief pause on final step
+        await new Promise(resolve => setTimeout(resolve, 500));
+      }
+
+      // Use backend URL directly (backend serves media via static mounting)
+      const fullUrl = `http://localhost:7860${returnedUrl}`;
       console.log('Video URL:', fullUrl);
       setVideoUrl(fullUrl);
 
@@ -109,7 +127,8 @@ const SearchInterface = ({ loading, setLoading }: { loading: boolean; setLoading
 
   const handleVideoError = (e: React.SyntheticEvent<HTMLVideoElement, Event>) => {
     console.error('Video error:', e);
-    setError('Failed to load video. Please try again.');
+    setVideoUrl(''); // Clear video URL so AlertCard can show
+    setError('Failed to load video. The backend service might need a moment to wake up.');
   };
 
   const handleDownload = () => {
@@ -177,6 +196,7 @@ const SearchInterface = ({ loading, setLoading }: { loading: boolean; setLoading
             <div className="relative glass-card rounded-xl p-0.5 smooth-hover">
               <div className="relative bg-gray-900/50 rounded-xl">
                 <Textarea
+                  ref={inputRef}
                   value={prompt}
                   onChange={(e) => setPrompt(e.target.value)}
                   placeholder="Describe the animation you want to create..."
@@ -247,155 +267,70 @@ const SearchInterface = ({ loading, setLoading }: { loading: boolean; setLoading
           </motion.div>
         )}
 
-        {/* Enhanced Video Output Section */}
+        {/* Video Generation Plan - Shows during loading BELOW input */}
         <AnimatePresence>
-          {(videoUrl || error || loading) && (
+          {loading && (
+            <motion.div
+              initial={{ height: 0, opacity: 0 }}
+              animate={{ height: "auto", opacity: 1 }}
+              exit={{ height: 0, opacity: 0 }}
+              transition={{ duration: 0.5, ease: [0.4, 0, 0.2, 1] }}
+              className="w-full overflow-hidden"
+            >
+              <VideoGenerationPlan currentStep={loadingStep} isVideoReady={!!videoUrl} />
+            </motion.div>
+          )}
+        </AnimatePresence>
+
+        {/* Error Alert Card - Shows ONLY when there's an error */}
+        <AnimatePresence>
+          {error && !loading && !videoUrl && (
+            <div className="w-full flex justify-center">
+              <AlertCard
+                isVisible={!!error}
+                title="Generation Failed"
+                description="Failed to generate video. The backend service might be asleep and will take 1-2 minutes to wake up. Please try again in a moment."
+                buttonText="Try Again"
+                onButtonClick={() => window.location.reload()}
+                icon={<AlertCircle className="h-6 w-6 text-destructive-foreground" />}
+              />
+            </div>
+          )}
+        </AnimatePresence>
+
+        {/* Video Player Only */}
+        <AnimatePresence mode="wait">
+          {videoUrl && !error && !loading && (
             <motion.div
               initial={{ opacity: 0, y: 20 }}
               animate={{ opacity: 1, y: 0 }}
               exit={{ opacity: 0, y: -20 }}
-              transition={{ duration: 0.6 }}
-              className="w-full"
+              transition={{ duration: 0.5 }}
+              className="w-full space-y-6"
             >
-              <Card className="glass-card border-0 overflow-hidden">
-                <CardContent className="p-4 sm:p-5 space-y-3 sm:space-y-4">
-                  {/* Header - responsive */}
-                  <div className="flex items-center gap-2 sm:gap-3">
-                    <div className="w-8 h-8 sm:w-9 sm:h-9 bg-gradient-to-tr from-indigo-500 to-purple-600 rounded-lg flex items-center justify-center flex-shrink-0">
-                      <Video className="w-4 h-4 text-white" />
-                    </div>
-                    <div className="min-w-0">
-                      <h3 className="text-white font-semibold text-sm sm:text-base truncate">Animation Output</h3>
-                      <p className="text-gray-300 text-xs truncate">
-                        {videoUrl ? "✨ Ready to view" : loading ? "⏳ Generating..." : "❌ Generation failed"}
-                      </p>
-                    </div>
-                  </div>
+              <VideoPlayer src={videoUrl} onError={() => handleVideoError({} as any)} onDownload={handleDownload} />
 
-                  {/* Error Display */}
-                  {error && (
-                    <motion.div
-                      initial={{ opacity: 0, scale: 0.95 }}
-                      animate={{ opacity: 1, scale: 1 }}
-                      className="p-4 rounded-xl bg-red-500/10 border border-red-500/20"
-                    >
-                      <div className="flex items-start gap-3">
-                        <AlertCircle size={20} className="text-red-400 mt-0.5 flex-shrink-0" />
-                        <div className="space-y-2">
-                          <p className="text-red-300 font-medium text-base">Generation Failed</p>
-                          <p className="text-sm text-gray-100">{error}</p>
-                        </div>
-                      </div>
-                    </motion.div>
-                  )}
-
-                  {/* Video Player or Loading - responsive */}
-                  <div className="rounded-lg overflow-hidden bg-black/40 border border-white/5 min-h-[240px] sm:min-h-[280px] flex items-center justify-center">
-                    {videoUrl ? (
-                      <div className="flex items-center justify-center w-full h-full">
-                        <video
-                          ref={videoRef}
-                          src={videoUrl}
-                          controls
-                          playsInline
-                          className="w-auto h-full max-w-full max-h-full rounded-lg mx-auto"
-                          onError={handleVideoError}
-                          key={videoUrl}
-                          autoPlay={false}
-                          preload="auto"
-                        >
-                          <source src={videoUrl} type="video/mp4" />
-                          Your browser does not support the video tag.
-                        </video>
-                      </div>
-                    ) : loading ? (
-                      <div className="text-center space-y-4 sm:space-y-5 p-6 sm:p-8">
-                        {/* Animated Loading Spinner - responsive */}
-                        <motion.div
-                          className="relative mx-auto w-12 h-12 sm:w-16 sm:h-16"
-                          animate={{ rotate: 360 }}
-                          transition={{ repeat: Infinity, duration: 2, ease: "linear" }}
-                        >
-                          <div className="absolute inset-0 border-4 border-indigo-500/30 rounded-full"></div>
-                          <div className="absolute inset-0 border-4 border-transparent border-t-indigo-500 rounded-full"></div>
-                        </motion.div>
-
-                        {/* Loading Text */}
-                        <div className="space-y-2">
-                          <motion.p
-                            key={loadingStep}
-                            initial={{ opacity: 0, y: 10 }}
-                            animate={{ opacity: 1, y: 0 }}
-                            exit={{ opacity: 0, y: -10 }}
-                            className="text-base font-medium text-white"
-                          >
-                            {loadingSteps[loadingStep]}
-                          </motion.p>
-
-                          <motion.p
-                            key={`tip-${loadingStep}`}
-                            initial={{ opacity: 0 }}
-                            animate={{ opacity: 1 }}
-                            className="text-xs text-gray-400"
-                          >
-                            {loadingTips[loadingStep]}
-                          </motion.p>
-
-                          {/* Progress Dots */}
-                          <div className="flex justify-center gap-1.5 pt-2">
-                            {loadingSteps.map((_, index) => (
-                              <motion.div
-                                key={index}
-                                className={`w-1.5 h-1.5 rounded-full ${index === loadingStep ? 'bg-indigo-500' : 'bg-gray-700'
-                                  }`}
-                                animate={{
-                                  scale: index === loadingStep ? 1.3 : 1,
-                                  opacity: index === loadingStep ? 1 : 0.5
-                                }}
-                                transition={{ duration: 0.3 }}
-                              />
-                            ))}
-                          </div>
-                        </div>
-                      </div>
-                    ) : (
-                      <div className="text-gray-500 text-center p-8">
-                        <Video size={48} className="mx-auto mb-3 opacity-50" />
-                        <p>Your animation will appear here</p>
-                      </div>
-                    )}
-                  </div>
-
-                  {/* Action Buttons - responsive stack on mobile */}
-                  {videoUrl && (
-                    <div className="flex flex-col sm:flex-row gap-2 sm:gap-3 pt-2">
-                      <Button
-                        variant="ghost"
-                        className="flex-1 bg-white/5 hover:bg-white/10 text-gray-200 border border-white/10 min-h-[44px] touch-manipulation shadow-none"
-                        onClick={() => {
-                          if (videoRef.current) {
-                            videoRef.current.currentTime = 0;
-                            videoRef.current.play();
-                          }
-                        }}
-                      >
-                        <Play size={16} className="mr-2" /> Replay
-                      </Button>
-                      <Button
-                        className="flex-1 bg-[#2d3250] hover:bg-[#3d4260] text-white min-h-[44px] touch-manipulation shadow-none border border-white/5"
-                        onClick={handleDownload}
-                      >
-                        <Download size={16} className="mr-2" /> Download
-                      </Button>
-                    </div>
-                  )}
-                </CardContent>
-              </Card>
+              <div className="flex justify-center">
+                <HoverButton
+                  onClick={() => {
+                    setVideoUrl('');
+                    // Optional: setPrompt(''); // Keep prompt for tweaking? 
+                    // Let's keep it so user can modify. 
+                    // Scroll to top or focus
+                    setTimeout(() => {
+                      inputRef.current?.focus();
+                      window.scrollTo({ top: 0, behavior: 'smooth' });
+                    }, 100);
+                  }}
+                >
+                  Generate New Animation
+                </HoverButton>
+              </div>
             </motion.div>
           )}
         </AnimatePresence>
-      </div>
-    </div>
+      </div >
+    </div >
   );
 };
 
