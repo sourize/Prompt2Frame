@@ -455,6 +455,22 @@ async def get_metrics():
         }
     }
 
+@app.get("/debug/files")
+async def debug_files():
+    """List files in media directory for debugging 404s."""
+    files = []
+    try:
+        for item in MEDIA_ROOT.rglob("*"):
+             if item.is_file():
+                 files.append({
+                     "path": str(item.relative_to(MEDIA_ROOT)),
+                     "size": item.stat().st_size,
+                     "age": time.time() - item.stat().st_mtime
+                 })
+    except Exception as e:
+        return {"error": str(e)}
+    return {"media_root": str(MEDIA_ROOT), "files": files, "count": len(files)}
+
 # ------------------------------------------------------------
 # Generate animation endpoint
 # ------------------------------------------------------------

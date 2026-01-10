@@ -12,8 +12,8 @@ import os
 
 logger = logging.getLogger(__name__)
 
-# Use absolute path for MEDIA_ROOT
-MEDIA_ROOT = Path(os.path.abspath("media/videos"))
+# Use environment variable for MEDIA_ROOT if set (e.g., /data for persistent storage)
+MEDIA_ROOT = Path(os.getenv("MEDIA_ROOT", os.path.abspath("media/videos")))
 MEDIA_ROOT.mkdir(parents=True, exist_ok=True)
 
 class RenderError(Exception):
