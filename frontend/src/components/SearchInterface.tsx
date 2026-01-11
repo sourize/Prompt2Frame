@@ -307,14 +307,7 @@ const SearchInterface = ({ loading, setLoading }: { loading: boolean; setLoading
               <div className="flex justify-center">
                 <HoverButton
                   onClick={() => {
-                    setVideoUrl('');
-                    // Optional: setPrompt(''); // Keep prompt for tweaking? 
-                    // Let's keep it so user can modify. 
-                    // Scroll to top or focus
-                    setTimeout(() => {
-                      inputRef.current?.focus();
-                      window.scrollTo({ top: 0, behavior: 'smooth' });
-                    }, 100);
+                    window.location.reload();
                   }}
                 >
                   Generate New Animation
