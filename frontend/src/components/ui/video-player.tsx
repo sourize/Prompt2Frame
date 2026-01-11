@@ -195,7 +195,7 @@ const VideoPlayer = ({ src, onError, onDownload }: { src: string; onError?: (e: 
             <AnimatePresence>
                 {(showControls || !isPlaying) && (
                     <motion.div
-                        className="absolute bottom-0 mx-auto max-w-xl left-0 right-0 p-3 sm:p-4 m-2 bg-[#111111e6] backdrop-blur-md rounded-2xl border border-white/5"
+                        className="absolute bottom-0 mx-auto max-w-xl left-0 right-0 p-2 sm:p-4 m-1.5 sm:m-2 bg-[#111111e6] backdrop-blur-md rounded-xl sm:rounded-2xl border border-white/5"
                         initial={{ y: 20, opacity: 0, filter: "blur(10px)" }}
                         animate={{ y: 0, opacity: 1, filter: "blur(0px)" }}
                         exit={{ y: 20, opacity: 0, filter: "blur(10px)" }}
