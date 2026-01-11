@@ -37,7 +37,7 @@ const Index = ({ loading, setLoading }: { loading: boolean; setLoading: (val: bo
           },
           {
             icon: <Twitter className="h-5 w-5" />,
-            href: "https://x.com/sourize",
+            href: "https://x.com/sourize_",
             label: "Twitter",
           },
           {
