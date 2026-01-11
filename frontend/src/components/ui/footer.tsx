@@ -31,7 +31,7 @@ export function Footer({
     copyright,
 }: FooterProps) {
     return (
-        <footer className="pt-2 pb-6 sm:py-8 bg-black/40 backdrop-blur-md border-t border-white/5">
+        <footer className="py-6 sm:py-8 bg-black/40 backdrop-blur-md border-t border-white/5">
             <div className="px-4 lg:px-8 max-w-7xl mx-auto">
                 <div className="md:flex md:items-start md:justify-between">
                     <a
