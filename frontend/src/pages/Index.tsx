@@ -1,6 +1,7 @@
 import Header from "@/components/Header";
 import SearchInterface from "@/components/SearchInterface";
-import { Github, Globe } from "lucide-react";
+import { Footer } from "@/components/ui/footer";
+import { Github, Globe, Sparkles, Twitter } from "lucide-react";
 
 const Index = ({ loading, setLoading }: { loading: boolean; setLoading: (val: boolean) => void }) => {
   return (
@@ -25,44 +26,40 @@ const Index = ({ loading, setLoading }: { loading: boolean; setLoading: (val: bo
       </div>
 
       {/* Footer */}
-      <footer className="relative z-10 mt-auto border-t border-gray-800/50 bg-black/40 backdrop-blur-md">
-        <div className="max-w-7xl mx-auto px-6 py-8">
-          <div className="flex flex-col items-center justify-between gap-6 md:flex-row">
-            <div className="flex items-center gap-4">
-              <a href="https://github.com/sourize" target="_blank" rel="noopener noreferrer">
-                <img
-                  src="https://github.com/sourize.png"
-                  alt="Sourish"
-                  className="w-10 h-10 rounded-full border border-gray-700/50 hover:border-indigo-500/50 transition-colors"
-                />
-              </a>
-              <div className="flex flex-col">
-                <span className="text-sm font-medium text-gray-200">Built by Sourish</span>
-                <span className="text-xs text-gray-500">Engineering 2D animations with AI</span>
-              </div>
-            </div>
-
-            <div className="flex items-center gap-6">
-              <a
-                href="https://github.com/sourize/Prompt2Frame"
-                target="_blank"
-                rel="noopener noreferrer"
-                className="text-sm text-gray-400 hover:text-white transition-colors duration-200"
-              >
-                View Code
-              </a>
-              <a
-                href="https://sourish.me"
-                target="_blank"
-                rel="noopener noreferrer"
-                className="text-sm text-gray-400 hover:text-white transition-colors duration-200"
-              >
-                Portfolio
-              </a>
-            </div>
-          </div>
-        </div>
-      </footer>
+      <Footer
+        logo={<Sparkles className="h-6 w-6 text-indigo-400" />}
+        brandName="Prompt2Frame"
+        socialLinks={[
+          {
+            icon: <Github className="h-5 w-5" />,
+            href: "https://github.com/sourize/Prompt2Frame",
+            label: "GitHub",
+          },
+          {
+            icon: <Twitter className="h-5 w-5" />,
+            href: "https://x.com/sourize",
+            label: "Twitter",
+          },
+          {
+            icon: <Globe className="h-5 w-5" />,
+            href: "https://sourish.me",
+            label: "Portfolio",
+          },
+        ]}
+        mainLinks={[
+          { href: "/", label: "Home" },
+          { href: "https://sourish.me", label: "About" },
+          { href: "https://github.com/sourize/Prompt2Frame", label: "Code" },
+        ]}
+        legalLinks={[
+          { href: "#", label: "Privacy Policy" },
+          { href: "#", label: "Terms of Service" },
+        ]}
+        copyright={{
+          text: "© 2024 Sourish Chatterjee",
+          license: "All rights reserved",
+        }}
+      />
     </div>
   );
 };
