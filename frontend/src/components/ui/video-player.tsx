@@ -203,16 +203,16 @@ const VideoPlayer = ({ src, onError, onDownload }: { src: string; onError?: (e: 
             <AnimatePresence>
                 {(showControls || !isPlaying) && (
                     <motion.div
-                        className="absolute bottom-0 mx-auto left-0 right-0 bg-[#111111e6] backdrop-blur-md border border-white/5 p-2 sm:p-4 m-2 sm:m-4 w-[calc(100%-16px)] sm:w-auto max-w-lg sm:max-w-xl rounded-xl sm:rounded-2xl"
-                        initial={{ y: 20, opacity: 0, filter: "blur(10px)" }}
-                        animate={{ y: 0, opacity: 1, filter: "blur(0px)" }}
-                        exit={{ y: 20, opacity: 0, filter: "blur(10px)" }}
-                        transition={{ duration: 0.4, ease: "circInOut" }}
+                        className="absolute bottom-0 left-0 right-0 w-full bg-gradient-to-t from-black/90 via-black/60 to-transparent pt-10 pb-2 px-3 sm:px-6"
+                        initial={{ opacity: 0 }}
+                        animate={{ opacity: 1 }}
+                        exit={{ opacity: 0 }}
+                        transition={{ duration: 0.2 }}
                         onClick={(e) => e.stopPropagation()}
                     >
                         {/* Progress Bar Row */}
-                        <div className="flex items-center gap-3 mb-3">
-                            <span className="text-white/80 text-xs font-medium tabular-nums min-w-[35px]">
+                        <div className="flex items-center gap-3 mb-2 w-full">
+                            <span className="text-white/90 text-xs font-medium tabular-nums min-w-[35px]">
                                 {formatTime(currentTime)}
                             </span>
                             <CustomSlider
@@ -220,25 +220,25 @@ const VideoPlayer = ({ src, onError, onDownload }: { src: string; onError?: (e: 
                                 onChange={handleSeek}
                                 className="flex-1"
                             />
-                            <span className="text-white/80 text-xs font-medium tabular-nums min-w-[35px] text-right">
+                            <span className="text-white/90 text-xs font-medium tabular-nums min-w-[35px] text-right">
                                 {formatTime(duration)}
                             </span>
                         </div>
 
                         {/* Controls Row */}
-                        <div className="flex items-center justify-between gap-x-2">
+                        <div className="flex items-center justify-between w-full">
                             {/* Left side: Play and Replay */}
-                            <div className="flex items-center gap-1 shrink-0">
+                            <div className="flex items-center gap-2">
                                 <Button
                                     onClick={togglePlay}
                                     variant="ghost"
                                     size="icon"
-                                    className="w-8 h-8 sm:w-10 sm:h-10 text-white hover:bg-white/10 hover:text-white rounded-full"
+                                    className="w-8 h-8 sm:w-10 sm:h-10 text-white hover:bg-white/10 hover:text-white rounded-full transition-colors"
                                 >
                                     {isPlaying ? (
-                                        <Pause className="h-4 w-4 sm:h-5 sm:w-5 fill-current" />
+                                        <Pause className="h-5 w-5 fill-current" />
                                     ) : (
-                                        <Play className="h-4 w-4 sm:h-5 sm:w-5 fill-current" />
+                                        <Play className="h-5 w-5 fill-current" />
                                     )}
                                 </Button>
 
@@ -246,25 +246,25 @@ const VideoPlayer = ({ src, onError, onDownload }: { src: string; onError?: (e: 
                                     onClick={handleReplay}
                                     variant="ghost"
                                     size="icon"
-                                    className="w-8 h-8 sm:w-10 sm:h-10 text-white hover:bg-white/10 hover:text-white rounded-full"
+                                    className="w-8 h-8 sm:w-10 sm:h-10 text-white hover:bg-white/10 hover:text-white rounded-full transition-colors"
                                 >
                                     <RotateCcw className="h-4 w-4 sm:h-5 sm:w-5" />
                                 </Button>
                             </div>
 
                             {/* Right side: Download, Speed, and Fullscreen */}
-                            <div className="flex items-center gap-1 sm:gap-3 justify-end ml-auto shrink-0">
+                            <div className="flex items-center gap-2 sm:gap-4">
                                 <Button
                                     onClick={handleDownload}
                                     variant="ghost"
                                     size="icon"
-                                    className="w-8 h-8 sm:w-10 sm:h-10 text-white hover:bg-white/10 hover:text-white rounded-full"
+                                    className="w-8 h-8 sm:w-10 sm:h-10 text-white hover:bg-white/10 hover:text-white rounded-full transition-colors"
                                     title="Download Video"
                                 >
                                     <Download className="h-4 w-4 sm:h-5 sm:w-5" />
                                 </Button>
 
-                                <div className="flex items-center bg-white/5 rounded-lg p-0.5 border border-white/5">
+                                <div className="flex items-center bg-white/10 rounded-lg p-0.5 border border-white/5 backdrop-blur-sm">
                                     {[0.5, 1, 1.5, 2].map((speed) => (
                                         <button
                                             key={speed}
@@ -272,7 +272,7 @@ const VideoPlayer = ({ src, onError, onDownload }: { src: string; onError?: (e: 
                                             className={cn(
                                                 "text-[10px] sm:text-xs font-medium px-2 py-1 sm:px-2.5 sm:py-1.5 rounded-md transition-all duration-200",
                                                 playbackSpeed === speed
-                                                    ? "bg-white text-black shadow-sm"
+                                                    ? "bg-white text-black shadow-sm scale-105"
                                                     : "text-white/70 hover:text-white hover:bg-white/10"
                                             )}
                                         >
@@ -285,7 +285,7 @@ const VideoPlayer = ({ src, onError, onDownload }: { src: string; onError?: (e: 
                                     onClick={toggleFullScreen}
                                     variant="ghost"
                                     size="icon"
-                                    className="w-8 h-8 sm:w-10 sm:h-10 text-white hover:bg-white/10 hover:text-white rounded-full"
+                                    className="w-8 h-8 sm:w-10 sm:h-10 text-white hover:bg-white/10 hover:text-white rounded-full transition-colors"
                                     title={isFullScreen ? "Exit Full Screen" : "Full Screen"}
                                 >
                                     {isFullScreen ? (
