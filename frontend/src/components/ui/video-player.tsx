@@ -2,7 +2,7 @@
 
 import React, { useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
-import { Play, Pause, RotateCcw, Download } from "lucide-react";
+import { Play, Pause, RotateCcw, Download, Maximize, Minimize } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import { cn } from "@/lib/utils";
 
@@ -50,12 +50,19 @@ const CustomSlider = ({
 
 const VideoPlayer = ({ src, onError, onDownload }: { src: string; onError?: (e: any) => void; onDownload?: () => void }) => {
     const videoRef = useRef<HTMLVideoElement>(null);
+    const containerRef = useRef<HTMLDivElement>(null);
     const [isPlaying, setIsPlaying] = useState(false);
     const [progress, setProgress] = useState(0);
     const [playbackSpeed, setPlaybackSpeed] = useState(1);
     const [showControls, setShowControls] = useState(false);
     const [currentTime, setCurrentTime] = useState(0);
     const [duration, setDuration] = useState(0);
+    const [isFullScreen, setIsFullScreen] = useState(false);
+    const [isMobile, setIsMobile] = useState(false);
+
+    React.useEffect(() => {
+        setIsMobile(window.matchMedia("(pointer: coarse)").matches);
+    }, []);
 
     const togglePlay = () => {
         if (videoRef.current) {
@@ -65,7 +72,7 @@ const VideoPlayer = ({ src, onError, onDownload }: { src: string; onError?: (e: 
                 videoRef.current.play();
             }
             setIsPlaying(!isPlaying);
-            setShowControls(true); // Ensure controls show on interaction
+            setShowControls(true);
         }
     };
 
@@ -118,29 +125,64 @@ const VideoPlayer = ({ src, onError, onDownload }: { src: string; onError?: (e: 
         }
     };
 
-    const [isMobile, setIsMobile] = useState(false);
+    const toggleFullScreen = async () => {
+        if (!document.fullscreenElement) {
+            try {
+                if (containerRef.current?.requestFullscreen) {
+                    await containerRef.current.requestFullscreen();
+                } else if ((containerRef.current as any)?.webkitRequestFullscreen) {
+                    await (containerRef.current as any).webkitRequestFullscreen();
+                } else if ((containerRef.current as any)?.msRequestFullscreen) {
+                    await (containerRef.current as any).msRequestFullscreen();
+                }
+                setIsFullScreen(true);
+            } catch (err) {
+                console.error("Error attempting to enable full-screen mode:", err);
+            }
+        } else {
+            if (document.exitFullscreen) {
+                await document.exitFullscreen();
+            } else if ((document as any).webkitExitFullscreen) {
+                await (document as any).webkitExitFullscreen();
+            } else if ((document as any).msExitFullscreen) {
+                await (document as any).msExitFullscreen();
+            }
+            setIsFullScreen(false);
+        }
+    };
 
     React.useEffect(() => {
-        setIsMobile(window.matchMedia("(pointer: coarse)").matches);
+        const handleFullScreenChange = () => {
+            setIsFullScreen(!!document.fullscreenElement);
+        };
+        document.addEventListener('fullscreenchange', handleFullScreenChange);
+        return () => document.removeEventListener('fullscreenchange', handleFullScreenChange);
     }, []);
 
     return (
         <motion.div
-            className="relative w-full max-w-4xl mx-auto rounded-3xl overflow-hidden bg-[#11111198] shadow-[0_0_20px_rgba(0,0,0,0.2)] backdrop-blur-sm group border border-white/40"
+            ref={containerRef}
+            className={cn(
+                "relative w-full mx-auto rounded-3xl overflow-hidden bg-[#11111198] shadow-[0_0_20px_rgba(0,0,0,0.2)] backdrop-blur-sm group border border-white/40",
+                isFullScreen ? "max-w-none rounded-none border-0 w-screen h-screen" : "max-w-4xl"
+            )}
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ duration: 0.5 }}
             onMouseEnter={() => !isMobile && setShowControls(true)}
             onMouseLeave={() => !isMobile && setShowControls(false)}
-            onClick={() => setShowControls(prev => !prev)} // Toggle controls on tap anywhere
+            onClick={() => setShowControls(prev => !prev)}
         >
             <video
                 ref={videoRef}
-                className="w-full aspect-video object-contain bg-black/50"
+                className={cn(
+                    "w-full aspect-video object-contain bg-black/50",
+                    isFullScreen && "h-screen w-screen"
+                )}
                 onTimeUpdate={handleTimeUpdate}
                 src={src}
                 onClick={(e) => {
-                    e.stopPropagation(); // Prevent double toggle
+                    e.stopPropagation();
                     togglePlay();
                 }}
                 onError={onError}
@@ -148,14 +190,14 @@ const VideoPlayer = ({ src, onError, onDownload }: { src: string; onError?: (e: 
             />
 
             <AnimatePresence>
-                {(showControls || !isPlaying) && ( // Always show controls when paused
+                {(showControls || !isPlaying) && (
                     <motion.div
                         className="absolute bottom-0 mx-auto max-w-xl left-0 right-0 p-3 sm:p-4 m-2 bg-[#111111e6] backdrop-blur-md rounded-2xl border border-white/5"
                         initial={{ y: 20, opacity: 0, filter: "blur(10px)" }}
                         animate={{ y: 0, opacity: 1, filter: "blur(0px)" }}
                         exit={{ y: 20, opacity: 0, filter: "blur(10px)" }}
                         transition={{ duration: 0.4, ease: "circInOut" }}
-                        onClick={(e) => e.stopPropagation()} // Prevent closing controls when clicking controls
+                        onClick={(e) => e.stopPropagation()}
                     >
                         {/* Progress Bar Row */}
                         <div className="flex items-center gap-3 mb-3">
@@ -199,7 +241,7 @@ const VideoPlayer = ({ src, onError, onDownload }: { src: string; onError?: (e: 
                                 </Button>
                             </div>
 
-                            {/* Right side: Download and Speed */}
+                            {/* Right side: Download, Speed, and Fullscreen */}
                             <div className="flex items-center gap-2 sm:gap-3 flex-wrap justify-end">
                                 <Button
                                     onClick={handleDownload}
@@ -227,6 +269,20 @@ const VideoPlayer = ({ src, onError, onDownload }: { src: string; onError?: (e: 
                                         </button>
                                     ))}
                                 </div>
+
+                                <Button
+                                    onClick={toggleFullScreen}
+                                    variant="ghost"
+                                    size="icon"
+                                    className="w-8 h-8 sm:w-10 sm:h-10 text-white hover:bg-white/10 hover:text-white rounded-full"
+                                    title={isFullScreen ? "Exit Full Screen" : "Full Screen"}
+                                >
+                                    {isFullScreen ? (
+                                        <Minimize className="h-4 w-4 sm:h-5 sm:w-5" />
+                                    ) : (
+                                        <Maximize className="h-4 w-4 sm:h-5 sm:w-5" />
+                                    )}
+                                </Button>
                             </div>
                         </div>
                     </motion.div>
