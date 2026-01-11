@@ -61,7 +61,15 @@ const VideoPlayer = ({ src, onError, onDownload }: { src: string; onError?: (e: 
     const [isMobile, setIsMobile] = useState(false);
 
     React.useEffect(() => {
-        setIsMobile(window.matchMedia("(pointer: coarse)").matches);
+        const checkMobile = () => {
+            const isTouch = window.matchMedia("(pointer: coarse)").matches;
+            const isSmallScreen = window.innerWidth < 768; // Standard tablet/mobile breakpoint
+            setIsMobile(isTouch || isSmallScreen);
+        };
+
+        checkMobile();
+        window.addEventListener('resize', checkMobile);
+        return () => window.removeEventListener('resize', checkMobile);
     }, []);
 
     const togglePlay = () => {
@@ -186,7 +194,7 @@ const VideoPlayer = ({ src, onError, onDownload }: { src: string; onError?: (e: 
                         e.stopPropagation(); // On desktop, prevent toggle-controls
                         togglePlay();       // Click video to play/pause
                     }
-                    // On mobile, let it bubble to container to toggle controls
+                    // On mobile (or small screen), let it bubble to container to toggle controls
                 }}
                 onError={onError}
                 playsInline
@@ -218,9 +226,9 @@ const VideoPlayer = ({ src, onError, onDownload }: { src: string; onError?: (e: 
                         </div>
 
                         {/* Controls Row */}
-                        <div className="flex flex-wrap items-center justify-between gap-y-2 gap-x-2">
+                        <div className="flex items-center justify-between gap-x-2">
                             {/* Left side: Play and Replay */}
-                            <div className="flex items-center gap-1">
+                            <div className="flex items-center gap-1 shrink-0">
                                 <Button
                                     onClick={togglePlay}
                                     variant="ghost"
@@ -245,7 +253,7 @@ const VideoPlayer = ({ src, onError, onDownload }: { src: string; onError?: (e: 
                             </div>
 
                             {/* Right side: Download, Speed, and Fullscreen */}
-                            <div className="flex items-center gap-2 sm:gap-3 flex-wrap justify-end ml-auto">
+                            <div className="flex items-center gap-1 sm:gap-3 justify-end ml-auto shrink-0">
                                 <Button
                                     onClick={handleDownload}
                                     variant="ghost"
