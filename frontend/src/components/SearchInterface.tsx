@@ -166,7 +166,7 @@ const SearchInterface = ({ loading, setLoading }: { loading: boolean; setLoading
   ];
 
   return (
-    <div className="relative flex flex-col items-center justify-center min-h-screen px-4 sm:px-6 pt-2 pb-8 sm:py-12">
+    <div className="relative flex flex-col items-center justify-start sm:justify-center min-h-screen px-4 sm:px-6 pt-12 pb-8 sm:py-12">
       <div className="w-full max-w-3xl mx-auto space-y-6 sm:space-y-8 relative z-10">
 
         {/* Header Section with Premium Styling */}
