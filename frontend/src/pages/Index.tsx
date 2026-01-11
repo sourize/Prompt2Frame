@@ -1,6 +1,7 @@
 import Header from "@/components/Header";
 import SearchInterface from "@/components/SearchInterface";
 import { Footer } from "@/components/ui/footer";
+import { Particles } from "@/components/ui/particles";
 import { Github, Globe, Sparkles, Twitter } from "lucide-react";
 
 const Index = ({ loading, setLoading }: { loading: boolean; setLoading: (val: boolean) => void }) => {
@@ -15,6 +16,15 @@ const Index = ({ loading, setLoading }: { loading: boolean; setLoading: (val: bo
         <Header />
         <SearchInterface loading={loading} setLoading={setLoading} />
       </div>
+
+      {/* Particles Background */}
+      <Particles
+        className="fixed inset-0 z-0"
+        quantity={100}
+        ease={80}
+        color="#ffffff"
+        refresh
+      />
 
       {/* Footer */}
       <div className="relative z-10">
