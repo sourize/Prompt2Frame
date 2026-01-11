@@ -118,15 +118,21 @@ const VideoPlayer = ({ src, onError, onDownload }: { src: string; onError?: (e: 
         }
     };
 
+    const [isMobile, setIsMobile] = useState(false);
+
+    React.useEffect(() => {
+        setIsMobile(window.matchMedia("(pointer: coarse)").matches);
+    }, []);
+
     return (
         <motion.div
             className="relative w-full max-w-4xl mx-auto rounded-3xl overflow-hidden bg-[#11111198] shadow-[0_0_20px_rgba(0,0,0,0.2)] backdrop-blur-sm group border border-white/40"
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ duration: 0.5 }}
-            onMouseEnter={() => setShowControls(true)}
-            onMouseLeave={() => setShowControls(false)}
-            onClick={() => setShowControls(prev => !prev)} // Toggle controls on tap anywhere on component
+            onMouseEnter={() => !isMobile && setShowControls(true)}
+            onMouseLeave={() => !isMobile && setShowControls(false)}
+            onClick={() => setShowControls(prev => !prev)} // Toggle controls on tap anywhere
         >
             <video
                 ref={videoRef}
