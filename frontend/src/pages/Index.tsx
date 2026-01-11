@@ -7,7 +7,7 @@ const Index = ({ loading, setLoading }: { loading: boolean; setLoading: (val: bo
   return (
     <div className="flex flex-col min-h-screen bg-black text-white">
       {/* Background gradient */}
-      <div className="fixed inset-0 bg-gradient-to-br from-gray-900 via-black to-gray-900 z-0"></div>
+      {/* Background gradient removed */}
 
       {/* ... previous grid pattern code ... */}
 
