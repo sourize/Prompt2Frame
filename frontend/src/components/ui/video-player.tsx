@@ -182,8 +182,11 @@ const VideoPlayer = ({ src, onError, onDownload }: { src: string; onError?: (e: 
                 onTimeUpdate={handleTimeUpdate}
                 src={src}
                 onClick={(e) => {
-                    e.stopPropagation();
-                    togglePlay();
+                    if (!isMobile) {
+                        e.stopPropagation(); // On desktop, prevent toggle-controls
+                        togglePlay();       // Click video to play/pause
+                    }
+                    // On mobile, let it bubble to container to toggle controls
                 }}
                 onError={onError}
                 playsInline
