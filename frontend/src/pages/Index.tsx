@@ -46,11 +46,7 @@ const Index = ({ loading, setLoading }: { loading: boolean; setLoading: (val: bo
             label: "Portfolio",
           },
         ]}
-        mainLinks={[
-          { href: "/", label: "Home" },
-          { href: "https://sourish.me", label: "About" },
-          { href: "https://github.com/sourize/Prompt2Frame", label: "Code" },
-        ]}
+        mainLinks={[]}
         legalLinks={[
           { href: "#", label: "Privacy Policy" },
           { href: "#", label: "Terms of Service" },
