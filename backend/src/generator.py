@@ -185,63 +185,106 @@ def generate_with_ai(technical_spec: str, max_retries: int = 2) -> Optional[str]
     """
     Generate Manim code using AI based on technical specification.
 
+    On each retry, injects a feedback message explaining exactly why the
+    previous attempt was rejected, allowing the LLM to self-correct.
+
     Fix #3: Exception messages are truncated to 200 chars before logging to
-    prevent leaking SDK internals (which can include request IDs, partial API
-    payloads, or other sensitive data) into log aggregators.
+    prevent leaking SDK internals into log aggregators.
     """
     logger.info("Attempting AI code generation")
+    last_rejection_reason: Optional[str] = None
 
     for attempt in range(1, max_retries + 1):
         try:
             logger.info(f"AI generation attempt {attempt}/{max_retries}")
+
+            # On retries, tell the LLM exactly why its previous code failed
+            user_msg = f"Technical Specification:\n\n{technical_spec}\n\nGenerate Manim code:"
+            if attempt > 1 and last_rejection_reason:
+                user_msg = (
+                    f"Technical Specification:\n\n{technical_spec}\n\n"
+                    f"IMPORTANT — your previous attempt was REJECTED:\n"
+                    f"{last_rejection_reason}\n\n"
+                    f"Fix the above issue and regenerate correct Manim code:"
+                )
 
             client = get_client()
             response = client.chat.completions.create(
                 model=MODEL_NAME,
                 messages=[
                     {"role": "system", "content": AI_SYSTEM_PROMPT},
-                    {"role": "user", "content": f"Technical Specification:\n\n{technical_spec}\n\nGenerate Manim code:"}
+                    {"role": "user", "content": user_msg}
                 ],
-                temperature=0.2,  # Low temperature for consistent code
+                temperature=0.2,
                 max_tokens=1500,
             )
 
             if not response or not response.choices:
                 logger.warning(f"AI attempt {attempt}: Empty response from API")
+                last_rejection_reason = "The API returned an empty response."
                 continue
 
             code = extract_code_from_response(response.choices[0].message.content)
 
             if not code or len(code) < 50:
                 logger.warning(f"AI attempt {attempt}: Code too short or empty ({len(code)} chars)")
+                last_rejection_reason = "The generated code was too short or empty."
                 continue
 
-            # Basic validation: check for required elements
-            if "class GeneratedScene" in code and "def construct" in code:
-                # Check for known-undefined Manim constants that cause NameError at render.
-                # These are commonly hallucinated by LLMs trained on older Manim versions.
-                forbidden = _find_forbidden_constants(code)
-                if forbidden:
-                    logger.warning(
-                        f"AI attempt {attempt}: code uses undefined constants {forbidden} — retrying"
-                    )
-                    continue
-                logger.info(f"AI code generation successful ({len(code)} characters)")
-                return code
-            else:
-                logger.warning(f"AI attempt {attempt}: Missing required class or construct method")
+            if "class GeneratedScene" not in code or "def construct" not in code:
+                last_rejection_reason = "Missing required class GeneratedScene or def construct method."
+                logger.warning(f"AI attempt {attempt}: {last_rejection_reason}")
                 continue
+
+            # Check for known-undefined Manim constants (NameError at render time)
+            forbidden = _find_forbidden_constants(code)
+            if forbidden:
+                last_rejection_reason = (
+                    f"Your code used undefined Manim v0.17.3 constants: {forbidden}. "
+                    "Use RIGHT instead of X_AXIS, UP instead of Y_AXIS, OUT instead of Z/Z_AXIS. "
+                    "Do NOT use MathTex, Tex, ShowCreation, or FadeInFrom."
+                )
+                logger.warning(f"AI attempt {attempt}: forbidden constants {forbidden} — retrying")
+                continue
+
+            # Check for Rotate() on complex VGroups (6+ sec/frame → timeout)
+            has_rotate = bool(re.search(r'\bRotate\s*\(', code))
+            range_count = len(re.findall(r'\brange\s*\(', code))
+            if has_rotate and range_count >= 2:
+                last_rejection_reason = (
+                    "Your code uses Rotate() on a VGroup built with range() — this takes "
+                    "6+ seconds per frame and will time out (renders ~400s total). "
+                    "INSTEAD: use ParametricFunction for smooth curves (helix, spiral). "
+                    "For a DNA helix, use two ParametricFunction objects with sin/cos, "
+                    "then animate with obj.animate.rotate(PI/4) in a single play()."
+                )
+                logger.warning(f"AI attempt {attempt}: Rotate()+range() slow pattern — retrying")
+                continue
+
+            # Check for excessive run_time values
+            large_rts = re.findall(r'run_time\s*=\s*(\d+(?:\.\d+)?)', code)
+            if any(float(rt) > 4 for rt in large_rts):
+                last_rejection_reason = (
+                    f"Your code uses run_time={large_rts} which exceeds the 4s limit. "
+                    "Keep every self.play() call to run_time ≤ 3."
+                )
+                logger.warning(f"AI attempt {attempt}: run_time {large_rts} too large — retrying")
+                continue
+
+            logger.info(f"AI code generation successful ({len(code)} characters)")
+            return code
 
         except Exception as e:
-            # Fix #3: Truncate the error string — Groq SDK errors can be verbose
-            # and may include request metadata. 200 chars is enough to diagnose.
             safe_error = str(e)[:200]
             logger.error(f"AI attempt {attempt} failed: {safe_error}")
+            last_rejection_reason = f"API error: {safe_error}"
             if attempt == max_retries:
                 return None
             continue
 
     return None
+
+
 
 
 # ---------------------------------------------------------------------------
@@ -321,6 +364,50 @@ def validate_code_basic(code: str) -> bool:
     return True
 
 
+def _generate_dynamic_fallback(technical_spec: str) -> str:
+    """
+    Generate a dynamic fallback animation when AI and templates fail.
+    Instead of rendering a generic blue circle, this displays a clean title-card
+    with the user's requested concept based on the technical specification.
+    """
+    import textwrap
+    import re
+    # Try to extract the core subject or just use the first line of the spec
+    subject = "Requested Animation"
+    
+    # Simple extraction heuristic based on our prompt_expander format
+    match = re.search(r"Animation Type:\s*([^\n]+)", technical_spec, re.IGNORECASE)
+    if match and match.group(1).strip():
+        subject = match.group(1).strip().title()
+    else:
+        # Just grab the first few lines, strip empty ones
+        lines = [line.strip() for line in technical_spec.split('\n') if line.strip()]
+        if lines:
+            subject = lines[0][:40] + ("..." if len(lines[0]) > 40 else "")
+
+    # Clean the subject for safe text injection (escape quotes)
+    safe_subject = subject.replace('"', '\\"').replace("'", "\\'")
+    
+    # Word wrap so long text doesn't flow off screen
+    wrapped_lines = textwrap.wrap(safe_subject, width=30)
+    formatted_subject = "\\n".join(wrapped_lines)
+
+    return f'''from manim import *
+
+class GeneratedScene(Scene):
+    def construct(self):
+        title = Text("Fallback Generation:", font_size=36, color=BLUE)
+        subtitle = Text("{formatted_subject}", font_size=40)
+        warning = Text("(Complexity exceeded AI limits)", font_size=24, color=GRAY)
+        
+        group = VGroup(title, subtitle, warning).arrange(DOWN, buff=0.5)
+        
+        self.play(FadeIn(group, shift=UP), run_time=1.5)
+        self.wait(1.5)
+        self.play(FadeOut(group, shift=DOWN), run_time=1.5)
+'''
+
+
 def generate_code(technical_spec: str) -> Tuple[str, str]:
     """
     Generate Manim code from technical specification.
@@ -370,14 +457,13 @@ def generate_code(technical_spec: str) -> Tuple[str, str]:
         return ai_code, "ai"
 
     # Fix #4: Explicitly log the fallback path so it is visible in production logs.
-    # Previously this was silent — the fallback was returned with no warning that
-    # the full pipeline had failed, making triage nearly impossible.
     logger.warning(
         "ALL generation tiers failed (template→AI). "
-        "Returning TEMPLATE_FALLBACK. "
+        "Returning dynamic TEMPLATE_FALLBACK. "
         "Check GROQ_API_KEY validity and Groq API status."
     )
-    return TEMPLATE_FALLBACK, "fallback"
+    fallback_code = _generate_dynamic_fallback(technical_spec)
+    return fallback_code, "fallback"
 
 
 def generate_code_with_retries(technical_spec: str, max_attempts: int = 2) -> Tuple[str, str]:
