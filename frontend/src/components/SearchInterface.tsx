@@ -84,7 +84,6 @@ const SearchInterface = ({ loading, setLoading }: { loading: boolean; setLoading
         {
           prompt,
           quality: 'm',
-          timeout: 800
         },
         {
           headers: token ? { Authorization: `Bearer ${token}` } : {}
