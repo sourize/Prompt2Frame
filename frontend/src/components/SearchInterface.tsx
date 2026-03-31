@@ -27,8 +27,12 @@ import {
   Circle
 } from "lucide-react";
 
-// Backend URL configuration
-const BACKEND_URL = import.meta.env.VITE_BACKEND_URL || 'http://localhost:7860';
+// Backend URL configuration — single source of truth.
+// In development: set VITE_BACKEND_URL=http://localhost:7860 in .env
+// In production (HF Spaces): set VITE_BACKEND_URL to your Space URL,
+//   e.g. https://sourize-prompt2frame-backend.hf.space
+// NEVER leave this as the placeholder value.
+const BACKEND_URL = import.meta.env.VITE_BACKEND_URL?.replace(/\/$/, '') || 'http://localhost:7860';
 
 const SearchInterface = ({ loading, setLoading }: { loading: boolean; setLoading: (val: boolean) => void }) => {
   const [prompt, setPrompt] = useState('');
@@ -94,34 +98,31 @@ const SearchInterface = ({ loading, setLoading }: { loading: boolean; setLoading
       // Complete remaining steps quickly before showing video
       const currentStepAtCompletion = loadingStep;
       if (currentStepAtCompletion < 3) {
-        // Quickly show remaining steps
         for (let i = currentStepAtCompletion + 1; i <= 3; i++) {
-          await new Promise(resolve => setTimeout(resolve, 300)); // 300ms per step
+          await new Promise(resolve => setTimeout(resolve, 300));
           setLoadingStep(i);
         }
-        // Brief pause on final step
         await new Promise(resolve => setTimeout(resolve, 500));
       }
 
-      // Use backend URL from env or default to localhost
-      const backendHost = import.meta.env.VITE_BACKEND_URL || 'http://localhost:7860';
-      const fullUrl = `${backendHost}${returnedUrl}`;
+      // Build the absolute video URL using the single BACKEND_URL constant.
+      // returnedUrl is always a relative path like /media/videos/abc/output.mp4
+      const fullUrl = `${BACKEND_URL}${returnedUrl}`;
       console.log('Video URL:', fullUrl);
 
-      // Handle Private HF Spaces by fetching with token
+      // Handle Private HF Spaces: fetch with Bearer token then stream via blob URL
       const hfToken = import.meta.env.VITE_HF_TOKEN;
       if (hfToken) {
         try {
           const videoRes = await fetch(fullUrl, {
             headers: { Authorization: `Bearer ${hfToken}` }
           });
-          if (!videoRes.ok) throw new Error(`Video fetch failed: ${videoRes.statusText}`);
+          if (!videoRes.ok) throw new Error(`Video fetch failed: ${videoRes.status} ${videoRes.statusText}`);
           const blob = await videoRes.blob();
           const objectUrl = URL.createObjectURL(blob);
           setVideoUrl(objectUrl);
         } catch (e) {
-          console.error("Failed to fetch private video:", e);
-          // Fallback to direct URL if fetch fails
+          console.error("Private HF Space video fetch failed, using direct URL as fallback:", e);
           setVideoUrl(fullUrl);
         }
       } else {

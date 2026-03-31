@@ -113,28 +113,42 @@ class SlidingWindowRateLimiter:
     
     def get_client_ip(self, request: Request) -> str:
         """
-        Extract client IP from request.
-        
-        Handles X-Forwarded-For header for proxied requests.
-        
-        Args:
-            request: FastAPI request object
-            
-        Returns:
-            Client IP address
+        Extract the real client IP from the request.
+
+        Fix #12 — IP Spoofing via X-Forwarded-For:
+        The previous implementation blindly trusted the first value in the
+        X-Forwarded-For header, which any client can set to an arbitrary IP
+        to bypass per-IP rate limiting:
+
+            X-Forwarded-For: 1.2.3.4, <real_client_ip>
+
+        A trusted reverse proxy (Railway, Render, Nginx, HF Spaces) *appends*
+        the real client IP to the end of the X-Forwarded-For chain. Entries
+        before that are supplied by the client and must not be trusted.
+
+        Safe strategy (Option B — proxy mode):
+        - Take the *last* IP in the X-Forwarded-For chain (the one the proxy
+          added, which the client cannot forge).
+        - Fall back to X-Real-IP if present (set by Nginx, also proxied).
+        - Final fallback: request.client.host (the TCP peer address).
+
+        If you are running WITHOUT a reverse proxy (Option A), remove the
+        X-Forwarded-For block and use request.client.host exclusively.
         """
-        # Check X-Forwarded-For header (for proxied requests)
         forwarded_for = request.headers.get("X-Forwarded-For")
         if forwarded_for:
-            # Take the first IP in the chain
-            return forwarded_for.split(",")[0].strip()
-        
-        # Check X-Real-IP header
+            # Split the chain and take the LAST entry — this is the IP that the
+            # trusted proxy appended and is the only one we can rely on.
+            ips = [ip.strip() for ip in forwarded_for.split(",") if ip.strip()]
+            if ips:
+                return ips[-1]
+
+        # X-Real-IP is set by Nginx/similar and reflects the immediate upstream
         real_ip = request.headers.get("X-Real-IP")
-        if real_ip:
+        if real_ip and real_ip.strip():
             return real_ip.strip()
-        
-        # Fall back to direct client
+
+        # Direct TCP connection (no proxy, or trusted uvicorn peer address)
         return request.client.host if request.client else "unknown"
     
     def get_stats(self) -> Dict[str, any]:

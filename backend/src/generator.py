@@ -8,16 +8,51 @@ falls back to AI generation if no match, and has a guaranteed fallback.
 import os
 import logging
 import re
-from typing import Optional
-from groq import Groq
-
-from .templates import match_template, TEMPLATE_FALLBACK
+from typing import Optional, Tuple
 
 logger = logging.getLogger(__name__)
 
-# Initialize Groq client
+# ---------------------------------------------------------------------------
+# Fix #2: Lazy-initialise the Groq client so a missing key doesn't crash the
+# entire application at import time. The app can boot and report "degraded"
+# instead of dying with an unhandled exception before FastAPI even starts.
+# ---------------------------------------------------------------------------
+
+_groq_client = None  # module-level singleton; populated on first use
+
+
+def get_client():
+    """
+    Return the (lazily-initialised) Groq client singleton.
+
+    Fix #1: This function is explicitly exported so that app.py's health-check
+    can call `from .generator import get_client` without an ImportError.
+
+    Fix #2: Initialisation is deferred here rather than at module load, so a
+    missing GROQ_API_KEY causes a clear RuntimeError at request time instead of
+    an unhandled crash during server startup.
+    """
+    global _groq_client
+    if _groq_client is None:
+        api_key = os.getenv("GROQ_API_KEY", "").strip()
+        if not api_key:
+            raise RuntimeError(
+                "GROQ_API_KEY environment variable is not set. "
+                "Get your key from https://console.groq.com/keys and add it to .env"
+            )
+        try:
+            from groq import Groq  # import inside function to allow testing without groq installed
+            _groq_client = Groq(api_key=api_key)
+        except Exception as exc:
+            raise RuntimeError(f"Failed to initialise Groq client: {exc}") from exc
+    return _groq_client
+
+
+# Model selection — configurable via environment variable
 MODEL_NAME = os.getenv("GROQ_MODEL", "llama-3.3-70b-versatile")
-client = Groq(api_key=os.getenv("GROQ_API_KEY"))
+
+# Import template utilities after defining get_client (avoids circular issues)
+from .templates import match_template, TEMPLATE_FALLBACK  # noqa: E402
 
 # Enhanced AI generation prompt with template awareness
 AI_SYSTEM_PROMPT = """You are a Manim code expert. Generate VALID Manim v0.17+ Python code based on technical specifications.
@@ -90,13 +125,13 @@ def extract_code_from_response(text: str) -> str:
     """Extract Python code from LLM response, handling markdown code blocks."""
     if not text:
         return ""
-    
+
     # Try to extract from markdown code block
     pattern = r"```(?:python)?\n([\s\S]*?)```"
     match = re.search(pattern, text, re.IGNORECASE)
     if match:
         return match.group(1).strip()
-    
+
     # Return as-is if no code block found
     return text.strip()
 
@@ -104,20 +139,18 @@ def extract_code_from_response(text: str) -> str:
 def generate_with_ai(technical_spec: str, max_retries: int = 2) -> Optional[str]:
     """
     Generate Manim code using AI based on technical specification.
-    
-    Args:
-        technical_spec: Plain text technical specification
-        max_retries: Maximum retry attempts
-        
-    Returns:
-        Generated Manim code or None if generation fails
+
+    Fix #3: Exception messages are truncated to 200 chars before logging to
+    prevent leaking SDK internals (which can include request IDs, partial API
+    payloads, or other sensitive data) into log aggregators.
     """
     logger.info("Attempting AI code generation")
-    
+
     for attempt in range(1, max_retries + 1):
         try:
             logger.info(f"AI generation attempt {attempt}/{max_retries}")
-            
+
+            client = get_client()
             response = client.chat.completions.create(
                 model=MODEL_NAME,
                 messages=[
@@ -127,47 +160,46 @@ def generate_with_ai(technical_spec: str, max_retries: int = 2) -> Optional[str]
                 temperature=0.2,  # Low temperature for consistent code
                 max_tokens=1500,
             )
-            
+
             if not response or not response.choices:
-                logger.warning(f"AI attempt {attempt}: Empty response")
+                logger.warning(f"AI attempt {attempt}: Empty response from API")
                 continue
-            
+
             code = extract_code_from_response(response.choices[0].message.content)
-            
-            if not code or len(code) < 50:  # Basic sanity check
-                logger.warning(f"AI attempt {attempt}: Code too short or empty")
+
+            if not code or len(code) < 50:
+                logger.warning(f"AI attempt {attempt}: Code too short or empty ({len(code)} chars)")
                 continue
-            
+
             # Basic validation: check for required elements
             if "class GeneratedScene" in code and "def construct" in code:
                 logger.info(f"AI code generation successful ({len(code)} characters)")
                 return code
             else:
-                logger.warning(f"AI attempt {attempt}: Missing required class or method")
+                logger.warning(f"AI attempt {attempt}: Missing required class or construct method")
                 continue
-                
+
         except Exception as e:
-            logger.error(f"AI attempt {attempt} failed: {e}")
+            # Fix #3: Truncate the error string — Groq SDK errors can be verbose
+            # and may include request metadata. 200 chars is enough to diagnose.
+            safe_error = str(e)[:200]
+            logger.error(f"AI attempt {attempt} failed: {safe_error}")
             if attempt == max_retries:
                 return None
             continue
-    
+
     return None
 
 
 def validate_code_basic(code: str) -> bool:
     """
     Basic validation of generated code.
-    
-    Args:
-        code: Generated Manim code
-        
-    Returns:
-        True if code passes basic validation
+
+    Returns True if code passes basic structural checks.
     """
     if not code or len(code) < 50:
         return False
-    
+
     # Check for required elements
     required = [
         "from manim import",
@@ -176,27 +208,26 @@ def validate_code_basic(code: str) -> bool:
         "self.play",
         "self.wait"
     ]
-    
+
     return all(req in code for req in required)
 
 
-def generate_code(technical_spec: str) -> str:
+def generate_code(technical_spec: str) -> Tuple[str, str]:
     """
     Generate Manim code from technical specification.
-    
+
     Uses three-tier approach:
     1. Template matching (fastest, most reliable)
     2. AI generation (flexible, for novel requests)
     3. Fallback template (guaranteed to work)
-    
-    Args:
-        technical_spec: Plain text technical specification from prompt_expander
-        
+
     Returns:
-        Working Manim Python code
+        Tuple of (manim_code, generation_method) where generation_method is one
+        of: "template", "ai", "fallback".  The method is surfaced so callers can
+        log or expose it without having to re-derive it.
     """
     logger.info("Starting code generation")
-    
+
     # Check if request has enhanced requirements that templates can't handle
     spec_lower = technical_spec.lower()
     enhanced_keywords = [
@@ -204,61 +235,66 @@ def generate_code(technical_spec: str) -> str:
         'show trajectory', 'fit a curve', 'regression',
         'and also', 'as well as', 'additionally', 'plus'
     ]
-    
+
     has_enhanced_requirements = any(keyword in spec_lower for keyword in enhanced_keywords)
-    
+
     # Tier 1: Try template matching (only if no enhanced requirements)
     if not has_enhanced_requirements:
         logger.info("Attempting template matching")
         template_code = match_template(technical_spec)
-        
-        # If matched a template (not fallback), return it
-        if template_code != TEMPLATE_FALLBACK:
+
+        # match_template returns None when no confident match found
+        # (it returns TEMPLATE_FALLBACK when confidence > 0 but we want to
+        #  distinguish "no match" from "fallback" — see templates.py fix)
+        if template_code is not None and template_code != TEMPLATE_FALLBACK:
             logger.info("Template match found, using proven code")
-            return template_code
+            return template_code, "template"
     else:
         logger.info("Enhanced requirements detected, skipping templates and using AI")
-    
+
     # Tier 2: Try AI generation for novel/enhanced requests
-    logger.info("No template match or enhanced request, trying AI generation")
+    logger.info("No confident template match or enhanced request, trying AI generation")
     ai_code = generate_with_ai(technical_spec)
-    
+
     if ai_code and validate_code_basic(ai_code):
         logger.info("AI generation successful")
-        return ai_code
-    
-    # Tier 3: Use fallback template (guaranteed to work)
-    logger.warning("AI generation failed, using fallback template")
-    return TEMPLATE_FALLBACK
+        return ai_code, "ai"
+
+    # Fix #4: Explicitly log the fallback path so it is visible in production logs.
+    # Previously this was silent — the fallback was returned with no warning that
+    # the full pipeline had failed, making triage nearly impossible.
+    logger.warning(
+        "ALL generation tiers failed (template→AI). "
+        "Returning TEMPLATE_FALLBACK. "
+        "Check GROQ_API_KEY validity and Groq API status."
+    )
+    return TEMPLATE_FALLBACK, "fallback"
 
 
-def generate_code_with_retries(technical_spec: str, max_attempts: int = 2) -> str:
+def generate_code_with_retries(technical_spec: str, max_attempts: int = 2) -> Tuple[str, str]:
     """
     Generate code with retry logic.
-    
-    Args:
-        technical_spec: Technical specification
-        max_attempts: Maximum generation attempts
-        
+
     Returns:
-        Generated Manim code
+        Tuple of (manim_code, generation_method)
     """
     for attempt in range(1, max_attempts + 1):
         try:
             logger.info(f"Code generation attempt {attempt}/{max_attempts}")
-            code = generate_code(technical_spec)
-            
+            code, method = generate_code(technical_spec)
+
             if validate_code_basic(code):
-                return code
+                return code, method
             else:
-                logger.warning(f"Attempt {attempt}: Validation failed")
+                logger.warning(f"Attempt {attempt}: Basic validation failed")
                 continue
-                
+
         except Exception as e:
-            logger.error(f"Attempt {attempt} error: {e}")
+            safe_error = str(e)[:200]
+            logger.error(f"Attempt {attempt} error: {safe_error}")
             if attempt == max_attempts:
                 logger.error("All attempts failed, returning fallback")
-                return TEMPLATE_FALLBACK
+                return TEMPLATE_FALLBACK, "fallback"
             continue
-    
-    return TEMPLATE_FALLBACK
+
+    return TEMPLATE_FALLBACK, "fallback"

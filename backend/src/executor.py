@@ -3,12 +3,13 @@ import subprocess
 import tempfile
 import shutil
 from pathlib import Path
-from typing import List, Optional, Union
+from typing import List, Optional
 import ast
 import logging
 import time
-import concurrent.futures
 import os
+
+from .validation import CodeSecurityValidator  # Fix #11
 
 logger = logging.getLogger(__name__)
 
@@ -54,41 +55,49 @@ def _extract_scene_names(code: str) -> List[str]:
     except SyntaxError as e:
         raise RenderError(f"Invalid Python syntax in generated code: {e}")
     
+    # Fix #9: Expanded the set of recognised Manim scene base classes.
+    # Previously only "Scene" was checked, so ThreeDScene (used by
+    # TEMPLATE_3D_ROTATE) was never detected → RenderError every time.
+    SCENE_BASE_CLASSES = {
+        "Scene",
+        "ThreeDScene",
+        "MovingCameraScene",
+        "ZoomedScene",
+        "LinearTransformationScene",
+        "VectorScene",
+    }
+
     scene_names = []
     for node in tree.body:
         if isinstance(node, ast.ClassDef):
             for base in node.bases:
-                if isinstance(base, ast.Name) and base.id == "Scene":
+                base_name: Optional[str] = None
+                if isinstance(base, ast.Name):
+                    base_name = base.id
+                elif isinstance(base, ast.Attribute):
+                    base_name = base.attr
+                if base_name in SCENE_BASE_CLASSES:
                     scene_names.append(node.name)
-                elif isinstance(base, ast.Attribute) and base.attr == "Scene":
-                    scene_names.append(node.name)
-    
+                    break  # one match per class is enough
+
     if not scene_names:
         raise RenderError("No Scene subclasses found in generated code")
-    
+
     logger.info(f"Found {len(scene_names)} scene(s): {', '.join(scene_names)}")
     return scene_names
 
 def _validate_code_safety(code: str) -> None:
-    """Validate code for potentially dangerous operations."""
-    dangerous_patterns = [
-        "import os",
-        "import sys", 
-        "import subprocess",
-        "__import__",
-        "eval(",
-        "exec(",
-        "open(",
-        "file(",
-        "input(",
-        "raw_input("
-    ]
-    
-    for pattern in dangerous_patterns:
-        if pattern in code.lower():
-            logger.warning(f"Potentially unsafe pattern detected: {pattern}")
-            # In production, you might want to raise an error here
-            # raise RenderError(f"Unsafe code pattern detected: {pattern}")
+    """
+    Fix #11: Validate code using the real CodeSecurityValidator instead of the
+    previous warn-only stub that (a) used code.lower() for all checks (missing
+    mixed-case injections) and (b) never actually raised an error.
+
+    CodeSecurityValidator.validate_code_safety raises a structured error and
+    logs at ERROR level, making security rejections visible in production logs.
+    """
+    is_safe, reason = CodeSecurityValidator.validate_code_safety(code)
+    if not is_safe:
+        raise RenderError(f"Security validation failed: {reason}")
 
 def _create_render_environment() -> Path:
     """
@@ -136,7 +145,7 @@ def _run_manim_command(cmd: List[str], timeout: int = 300) -> tuple[int, str, st
             try:
                 process.kill()
                 process.wait(timeout=5)
-            except:
+            except Exception:
                 pass
         raise RenderError(f"Failed to execute Manim command: {e}")
     finally:
@@ -144,7 +153,7 @@ def _run_manim_command(cmd: List[str], timeout: int = 300) -> tuple[int, str, st
             try:
                 process.kill()
                 process.wait(timeout=5)
-            except:
+            except Exception:
                 pass
 
 def _concatenate_videos(video_paths: List[Path], output_path: Path) -> None:
@@ -294,8 +303,8 @@ def render_and_concat_all(
             ]
             
             # Explicitly add only non-default flags
-            if not "--disable_caching" in cmd:
-                 cmd.append("--disable_caching")
+            if "--disable_caching" not in cmd:
+                cmd.append("--disable_caching")
             
             # Add performance optimizations
             if quality == "l":
@@ -382,35 +391,11 @@ def _get_video_duration(video_path: Path) -> float:
         logger.warning(f"Could not check duration: {e}")
         return 0.0
 
-def _concatenate_videos(video_files: List[Path], output_path: Path):
-    """
-    Concatenate video files using ffmpeg concat demuxer.
-    Determinisitic linking of N clips into 1.
-    """
-    with tempfile.NamedTemporaryFile(mode='w', suffix='.txt', delete=False) as f:
-        for video_file in video_files:
-            # Escape path for ffmpeg safe filename
-            path_str = str(video_file.absolute()).replace("'", "'\\''")
-            f.write(f"file '{path_str}'\n")
-        list_file = f.name
-    
-    try:
-        cmd = [
-            "ffmpeg",
-            "-y",
-            "-f", "concat",
-            "-safe", "0",
-            "-i", list_file,
-            "-c", "copy",
-            str(output_path)
-        ]
-        
-        subprocess.run(cmd, check=True, capture_output=True)
-        
-    except subprocess.CalledProcessError as e:
-        raise RuntimeError(f"FFmpeg concat failed: {e.stderr.decode() if e.stderr else str(e)}")
-    finally:
-        os.unlink(list_file)
+# Fix #10: The duplicate _concatenate_videos definition that was here (lines
+# 385-413 in the original) has been removed. It shadowed the richer
+# implementation at line ~150 which correctly filters zero-byte files, handles
+# PermissionError, and tries re-encoding as a fallback. The first definition
+# is what render_and_concat_all already calls at line ~340.
 
 def get_video_info(video_path: Path) -> dict:
     """

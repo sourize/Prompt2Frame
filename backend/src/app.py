@@ -2,10 +2,8 @@ import time
 import psutil
 import logging
 import asyncio
-import os
 from contextlib import asynccontextmanager
-from typing import Dict, Any, Optional
-from pathlib import Path
+from typing import Optional
 
 from fastapi import FastAPI, HTTPException, Request, status, BackgroundTasks, Depends
 from fastapi.responses import JSONResponse
@@ -14,7 +12,7 @@ from starlette.middleware.base import BaseHTTPMiddleware
 from pydantic import BaseModel, Field
 
 from .config import get_settings
-from .validation import PromptValidator, CodeSecurityValidator
+from .validation import PromptValidator
 from .errors import ErrorResponse, ErrorMessages, get_correlation_id
 from .circuit_breaker import CircuitBreakerOpen, groq_circuit_breaker
 from .cache import prompt_cache, video_cache, initialize_video_cache
@@ -52,6 +50,7 @@ class GenerateResponse(BaseModel):
     renderTime: float
     codeLength: int
     expandedPrompt: Optional[str] = None
+    generationMethod: Optional[str] = None  # "template" | "ai" | "fallback"
 
 # ------------------------------------------------------------
 # Global state for monitoring
@@ -313,7 +312,7 @@ async def health_check():
     """
     import shutil
     import subprocess
-    from datetime import datetime, timedelta
+    from datetime import datetime
     
     health_status = {
         "status": "healthy",
@@ -325,12 +324,12 @@ async def health_check():
     
     # Check Groq API connectivity
     try:
-        from .generator import get_client
-        client = get_client()
-        # Simple connectivity test (doesn't count against rate limits)
+        from .generator import get_client  # Fix #1: now correctly exported
+        get_client()  # Validates the client can be initialised
         health_status["checks"]["groq_api"] = "connected"
     except Exception as e:
-        health_status["checks"]["groq_api"] = f"error: {str(e)[:50]}"
+        safe_msg = str(e)[:100]
+        health_status["checks"]["groq_api"] = f"error: {safe_msg}"
         health_status["status"] = "degraded"
     
     # Check FFmpeg availability
@@ -405,8 +404,8 @@ async def readiness_check():
     from .generator import get_client # Import here to ensure it's available
     
     try:
-        # Check critical dependencies
-        client = get_client()  # Ensures Groq client initialized
+        # Check critical dependencies — get_client() raises RuntimeError if key is missing
+        get_client()  # Validates Groq client can be initialised
         
         # Check disk space
         disk = shutil.disk_usage(str(MEDIA_ROOT))
@@ -581,11 +580,16 @@ async def generate_animation(
         # 2) Generate Manim code
         logger.info("Generating Manim code...")
         try:
-            code = await asyncio.wait_for(
+            code, generation_method = await asyncio.wait_for(
                 asyncio.create_task(asyncio.to_thread(generate_code_with_retries, detailed_prompt)),
                 timeout=60
             )
-            logger.info(f"Code generation completed ({len(code)} chars)")
+            logger.info(f"Code generation completed via '{generation_method}' ({len(code)} chars)")
+            if generation_method == "fallback":
+                logger.warning(
+                    f"[{correlation_id}] Generation fell back to TEMPLATE_FALLBACK — "
+                    "check Groq API key/quota and template keyword coverage."
+                )
         except asyncio.TimeoutError:
             raise HTTPException(
                 status_code=status.HTTP_408_REQUEST_TIMEOUT,
@@ -639,7 +643,8 @@ async def generate_animation(
             videoUrl=video_url,
             renderTime=total_time,
             codeLength=len(code),
-            expandedPrompt=(detailed_prompt if len(detailed_prompt) < 200 else None)
+            expandedPrompt=(detailed_prompt if len(detailed_prompt) < 200 else None),
+            generationMethod=generation_method
         )
 
     except HTTPException:
@@ -654,7 +659,7 @@ async def generate_animation(
 # ------------------------------------------------------------
 # Static File Serving (Robust)
 # ------------------------------------------------------------
-from fastapi.staticfiles import StaticFiles
+from fastapi.staticfiles import StaticFiles  # noqa: E402 — must follow app creation
 
 # Ensure media root exists
 MEDIA_ROOT.mkdir(parents=True, exist_ok=True)

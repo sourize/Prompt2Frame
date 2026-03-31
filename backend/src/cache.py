@@ -11,8 +11,6 @@ import time
 import json
 from pathlib import Path
 from typing import Optional, Dict, Any
-from functools import lru_cache
-from datetime import datetime, timedelta
 import logging
 
 logger = logging.getLogger(__name__)
@@ -220,21 +218,21 @@ class VideoCache:
     def set(self, prompt: str, video_path: str, quality: str = 'm'):
         """
         Register a generated video in cache.
-        
-        Args:
-            prompt: Original prompt
-            video_path: Path to generated video
-            quality: Video quality
+
+        Fix #13: The original implementation stored the normalized user prompt
+        as plaintext in cache_metadata.json on disk. This is unnecessary PII
+        on the filesystem — the cache key (SHA-256 hash) already uniquely
+        identifies the prompt without exposing its content.
         """
         cache_key = generate_cache_key(prompt, quality)
-        
+
         self._metadata[cache_key] = {
-            'prompt': normalize_prompt(prompt),
+            # 'prompt' field removed — see Fix #13
             'video_path': video_path,
             'quality': quality,
             'created_at': time.time()
         }
-        
+
         self._save_metadata()
         logger.info(f"Video cached: {cache_key}")
     
@@ -265,16 +263,25 @@ class VideoCache:
         return len(expired_keys)
     
     def get_stats(self) -> Dict[str, Any]:
-        """Get cache statistics."""
+        """Get cache statistics.
+
+        Fix #14: The original called video_path.stat().st_size without checking
+        existence, risking FileNotFoundError when a video was deleted externally
+        between the metadata load and the stats query.
+        """
         total_size = 0
         for entry in self._metadata.values():
             video_path = Path(entry['video_path'])
-            if video_path.exists():
-                total_size += video_path.stat().st_size
-        
+            try:
+                if video_path.exists():
+                    total_size += video_path.stat().st_size
+            except OSError:
+                # File may have been deleted between .exists() and .stat()
+                pass
+
         return {
             "entries": len(self._metadata),
-            "total_size_mb": total_size / (1024 * 1024),
+            "total_size_mb": round(total_size / (1024 * 1024), 2),
             "ttl_days": self.ttl_seconds / (24 * 3600)
         }
 
