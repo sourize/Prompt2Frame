@@ -123,8 +123,36 @@ CRITICAL RULES:
     - For 3D scenes: always `import numpy as np` at the top (needed for np.array operations)
 18. **AVOID complex 3D objects** on free-tier (CPU limited):
     - AVOID: Cylinder, Sphere, Cone — these render slowly
-    - PREFER: Line, Dot, Circle, Arc — render in <10 seconds
+    - PREFER: Line, Dot, Circle, Arc, ParametricFunction — render in <10 seconds
     - For a DNA helix: use `ParametricFunction` with `np.sin`/`np.cos` in a 2D Scene, NOT Cylinders
+19. **PERFORMANCE — CRITICAL for deployment on limited CPU:**
+    - **NEVER use `Rotate()` on a VGroup with more than 8 objects** — it renders frame-by-frame
+      and will time out (each frame takes 5-7 seconds × 60+ frames = timeout)
+    - **NEVER use `run_time > 3`** — keep every self.play() call to run_time ≤ 3 seconds
+    - **NEVER create more than 12 objects in a VGroup** — use ParametricFunction for smooth curves
+    - **For any rotating/spinning animation**: use `obj.animate.rotate(angle)` in a short play()
+      rather than `Rotate(obj, angle)` which is frame-by-frame heavy
+    - **For helical/spiral shapes**: use ONE `ParametricFunction`, not many discrete objects
+
+CORRECT DNA HELIX PATTERN (fast, renders in <30s):
+```python
+from manim import *
+import numpy as np
+
+class GeneratedScene(Scene):
+    def construct(self):
+        helix1 = ParametricFunction(
+            lambda t: np.array([np.cos(t), np.sin(t), t/4]),
+            t_range=[-3*PI, 3*PI], color=BLUE
+        ).scale(1.5)
+        helix2 = ParametricFunction(
+            lambda t: np.array([np.cos(t + PI), np.sin(t + PI), t/4]),
+            t_range=[-3*PI, 3*PI], color=RED
+        ).scale(1.5)
+        self.play(Create(helix1), Create(helix2), run_time=2)
+        self.play(helix1.animate.rotate(PI/4), helix2.animate.rotate(PI/4), run_time=2)
+        self.wait(1)
+```
 
 CUSTOMIZATION INSTRUCTIONS:
 - If the spec mentions specific coordinates, USE THEM EXACTLY
@@ -268,6 +296,26 @@ def validate_code_basic(code: str) -> bool:
 
     # Reject code with known-undefined Manim constants
     if _find_forbidden_constants(code):
+        return False
+
+    # Reject code that will almost certainly time out on HF free-tier:
+    # Rotate() combined with a large range() → frame-by-frame on many objects
+    # Example: Rotate(VGroup of 40 Cylinders) takes 6s/frame × 60 frames = 360s
+    has_rotate_animation = bool(re.search(r'\bRotate\s*\(', code))
+    range_counts = len(re.findall(r'\brange\s*\(', code))
+    if has_rotate_animation and range_counts >= 2:
+        logger.warning(
+            "Code rejected: Rotate() combined with multiple range() calls "
+            "will exceed render timeout on free-tier CPU."
+        )
+        return False
+
+    # Reject suspiciously large run_time values (> 4 seconds per play call)
+    large_runtimes = re.findall(r'run_time\s*=\s*(\d+(?:\.\d+)?)', code)
+    if any(float(rt) > 4 for rt in large_runtimes):
+        logger.warning(
+            f"Code rejected: run_time values {large_runtimes} exceed 4s limit."
+        )
         return False
 
     return True
