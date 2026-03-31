@@ -1,16 +1,24 @@
 """
-Generator - Converts technical specifications to Manim code.
+Generator - Converts user prompts directly into Manim code using AI.
 
-Uses template-first approach: tries to match keywords to proven templates,
-falls back to AI generation if no match, and has a guaranteed fallback.
+Architecture inspired by rohitg00/manim-video-generator:
+  - No template matching — AI handles everything
+  - Multi-stage prompting: intent analysis → code generation
+  - Self-healing: render errors are fed back to the LLM for auto-correction
+  - 3Blue1Brown-inspired visual style by default
 """
 
+import ast
 import os
-import logging
 import re
+import logging
 from typing import Optional, Tuple
 
 logger = logging.getLogger(__name__)
+
+# ---------------------------------------------------------------------------
+# Groq client (lazy singleton)
+# ---------------------------------------------------------------------------
 
 _groq_client = None
 
@@ -21,7 +29,7 @@ def get_client():
         api_key = os.getenv("GROQ_API_KEY", "").strip()
         if not api_key:
             raise RuntimeError(
-                "GROQ_API_KEY environment variable is not set. "
+                "GROQ_API_KEY is not set. "
                 "Get your key from https://console.groq.com/keys and add it to .env"
             )
         try:
@@ -35,379 +43,503 @@ def get_client():
 
 MODEL_NAME = os.getenv("GROQ_MODEL", "llama-3.3-70b-versatile")
 
-from .templates import match_template, TEMPLATE_FALLBACK  # noqa: E402
+# ---------------------------------------------------------------------------
+# Master system prompt
+# Inspired by the reference project's prompt-engine approach:
+#   - Explicit visual style (3Blue1Brown-like dark background)
+#   - Comprehensive Manim API reference baked in
+#   - Ordering rule at the very top
+#   - Self-contained: no templates needed
+# ---------------------------------------------------------------------------
 
-AI_SYSTEM_PROMPT = (
-    "You are a Manim code expert. Generate VALID Manim v0.17+ Python code based on "
-    "technical specifications.\n\n"
-    "RULE #0 — ANIMATION ORDER (HIGHEST PRIORITY — NEVER VIOLATE)\n"
-    "Write every self.play() call in the EXACT chronological order described.\n"
-    "- 'draw a circle, then transform it into a square':\n"
-    "    Step 1: self.play(Create(circle))\n"
-    "    Step 2: self.play(ReplacementTransform(circle, square))\n"
-    "  NEVER reverse these.\n"
-    "- Each narrative step maps to one self.play() call, in order.\n"
-    "- NEVER group all creations first and animations second.\n"
-    "- NEVER reorder steps for aesthetic or technical reasons.\n\n"
-    "EXAMPLE 1 — 'Draw a red circle and transform it into a blue square':\n"
-    "from manim import *\n\n"
+MASTER_SYSTEM_PROMPT = (
+    "You are an expert Manim animation programmer. "
+    "Your sole job is to write VALID, RUNNABLE Manim v0.17+ Python code "
+    "that exactly matches what the user describes.\n\n"
+    # ── RULE 0: ORDER ──────────────────────────────────────────────────────
+    "══════════════════════════════════════════\n"
+    "RULE 0 — ANIMATION ORDER (NEVER VIOLATE)\n"
+    "══════════════════════════════════════════\n"
+    "Write every self.play() in the EXACT order the user described.\n"
+    "  'Draw a red circle, then transform it into a blue square'\n"
+    "   → Step 1: self.play(Create(circle))          ← circle FIRST\n"
+    "   → Step 2: self.play(ReplacementTransform(...)) ← transform SECOND\n"
+    "NEVER group all creations first. NEVER reorder for aesthetics.\n\n"
+    # ── VISUAL STYLE ───────────────────────────────────────────────────────
+    "══════════════════════════════════════════\n"
+    "VISUAL STYLE (3Blue1Brown-inspired)\n"
+    "══════════════════════════════════════════\n"
+    "- Background is always BLACK (default in Manim)\n"
+    "- Use vivid colors: BLUE, RED, GREEN, YELLOW, ORANGE, PURPLE, TEAL, PINK\n"
+    "- Shapes: use set_fill(color, opacity=0.3-0.7) for filled shapes\n"
+    "- Text: always use Text(), never MathTex/Tex (LaTeX not installed)\n"
+    "- Stroke width: 2-4 for shapes, 1 for connection lines\n"
+    "- Keep objects within x=[-6,6], y=[-3,3]\n\n"
+    # ── MANIM API REFERENCE ────────────────────────────────────────────────
+    "══════════════════════════════════════════\n"
+    "MANIM v0.17+ API QUICK REFERENCE\n"
+    "══════════════════════════════════════════\n"
+    "SHAPES:\n"
+    "  Circle(radius=1.0, color=BLUE)\n"
+    "  Square(side_length=2.0, color=RED)\n"
+    "  Rectangle(width=3, height=2, color=GREEN)\n"
+    "  Triangle(color=YELLOW)\n"
+    "  Polygon(*vertices, color=ORANGE)\n"
+    "  Line(start, end, color=WHITE)\n"
+    "  Arrow(start, end, color=WHITE)\n"
+    "  Dot(point, color=WHITE)\n"
+    "  Arc(radius=1, angle=PI, color=BLUE)\n"
+    "  Ellipse(width=3, height=2, color=TEAL)\n\n"
+    "TEXT:\n"
+    "  Text('hello', font_size=48, color=WHITE)\n"
+    "  # NEVER use MathTex, Tex, or TexTemplate — LaTeX is not installed\n\n"
+    "POSITIONING:\n"
+    "  obj.move_to(point)          # e.g. move_to(LEFT * 2 + UP)\n"
+    "  obj.shift(direction)        # e.g. shift(RIGHT * 3)\n"
+    "  obj.next_to(other, DOWN)    # relative positioning\n"
+    "  obj.to_corner(UL)           # corners: UL, UR, DL, DR\n"
+    "  obj.to_edge(LEFT)           # edges: LEFT, RIGHT, UP, DOWN\n"
+    "  Directions: UP, DOWN, LEFT, RIGHT, ORIGIN\n"
+    "  Combine: LEFT*2 + UP*0.5\n\n"
+    "ANIMATIONS (self.play(...)):\n"
+    "  Create(obj)                 # draw shape outline\n"
+    "  Write(text_obj)             # write text stroke by stroke\n"
+    "  FadeIn(obj)                 # fade in\n"
+    "  FadeOut(obj)                # fade out\n"
+    "  GrowFromCenter(obj)         # grow from center point\n"
+    "  ReplacementTransform(a, b)  # morph a into b (a is removed)\n"
+    "  Transform(a, b)             # morph a into b (a stays)\n"
+    "  obj.animate.shift(v)        # move smoothly\n"
+    "  obj.animate.scale(factor)   # scale smoothly\n"
+    "  obj.animate.rotate(angle)   # rotate smoothly\n"
+    "  obj.animate.set_color(c)    # change color smoothly\n"
+    "  obj.animate.move_to(point)  # move to point smoothly\n"
+    "  MoveAlongPath(obj, path)    # move along a curve\n"
+    "  Rotate(obj, angle, about_point=ORIGIN)  # rotate around point\n\n"
+    "GROUPING:\n"
+    "  group = VGroup(a, b, c)           # group objects\n"
+    "  group.arrange(RIGHT, buff=0.5)    # lay out in a row\n"
+    "  group.arrange(DOWN, buff=0.3)     # lay out in a column\n\n"
+    "AXES AND GRAPHS:\n"
+    "  axes = Axes(x_range=[-3,3,1], y_range=[-2,2,1])\n"
+    "  graph = axes.plot(lambda x: x**2, color=BLUE)\n"
+    "  dot = Dot(axes.c2p(1, 1), color=RED)  # convert coords to position\n\n"
+    "TIMING:\n"
+    "  self.play(anim, run_time=2)   # 2-second animation (max 3)\n"
+    "  self.wait(1)                  # pause for 1 second\n"
+    "  # Play multiple at once: self.play(Create(a), FadeIn(b))\n\n"
+    "3D SCENES:\n"
+    "  class GeneratedScene(ThreeDScene):  # use ThreeDScene for 3D\n"
+    "      def construct(self):\n"
+    "          self.set_camera_orientation(phi=75*DEGREES, theta=30*DEGREES)\n"
+    "  # For 3D: import numpy as np\n"
+    "  # Use ParametricFunction for helices/spirals, NOT Cylinder/Sphere (too slow)\n\n"
+    # ── FORBIDDEN ──────────────────────────────────────────────────────────
+    "══════════════════════════════════════════\n"
+    "FORBIDDEN — causes immediate errors\n"
+    "══════════════════════════════════════════\n"
+    "- MathTex, Tex, TexTemplate  → use Text() instead\n"
+    "- ShowCreation                → use Create()\n"
+    "- FadeInFrom                  → use FadeIn()\n"
+    "- X_AXIS, Y_AXIS, Z, Z_AXIS   → use RIGHT, UP, OUT\n"
+    "- about_axis=  in rotate()    → use axis= instead\n"
+    "- Line(p1, p2, p3)            → Line only takes 2 points\n"
+    "- run_time > 3                → keep all run_time <= 3\n"
+    "- Rotate() on VGroup of 8+ objects  → causes timeout\n"
+    "- np.pi without import numpy as np  → use PI instead\n\n"
+    # ── WORKED EXAMPLES ────────────────────────────────────────────────────
+    "══════════════════════════════════════════\n"
+    "WORKED EXAMPLES\n"
+    "══════════════════════════════════════════\n"
+    "Example 1 — 'Draw a red circle and transform it into a blue square':\n"
+    "from manim import *\n"
     "class GeneratedScene(Scene):\n"
     "    def construct(self):\n"
     "        circle = Circle(radius=1.5, color=RED)\n"
-    "        circle.set_fill(RED, opacity=0.5)\n"
+    "        circle.set_fill(RED, opacity=0.4)\n"
     "        self.play(Create(circle))\n"
     "        self.wait(0.5)\n"
     "        square = Square(side_length=2.5, color=BLUE)\n"
-    "        square.set_fill(BLUE, opacity=0.5)\n"
+    "        square.set_fill(BLUE, opacity=0.4)\n"
     "        self.play(ReplacementTransform(circle, square))\n"
     "        self.wait(1)\n\n"
-    "EXAMPLE 2 — 'Show the word Hello, move it up, then fade it out':\n"
-    "from manim import *\n\n"
+    "Example 2 — 'Show Hello, move it up, fade out':\n"
+    "from manim import *\n"
     "class GeneratedScene(Scene):\n"
     "    def construct(self):\n"
-    "        label = Text('Hello', font_size=60, color=YELLOW)\n"
+    "        label = Text('Hello', font_size=72, color=YELLOW)\n"
     "        self.play(Write(label))\n"
     "        self.wait(0.5)\n"
     "        self.play(label.animate.shift(UP * 2))\n"
     "        self.wait(0.5)\n"
     "        self.play(FadeOut(label))\n"
     "        self.wait(0.5)\n\n"
-    "EXAMPLE 3 — 'Draw a green arrow pointing right, then rotate it 90 degrees':\n"
-    "from manim import *\n\n"
+    "Example 3 — 'Animate a bouncing ball':\n"
+    "from manim import *\n"
     "class GeneratedScene(Scene):\n"
     "    def construct(self):\n"
-    "        arrow = Arrow(start=LEFT * 2, end=RIGHT * 2, color=GREEN)\n"
-    "        self.play(Create(arrow))\n"
-    "        self.wait(0.5)\n"
-    "        self.play(arrow.animate.rotate(PI / 2))\n"
+    "        ball = Circle(radius=0.4, color=YELLOW)\n"
+    "        ball.set_fill(YELLOW, opacity=1)\n"
+    "        ball.move_to(LEFT * 4)\n"
+    "        arc1 = ArcBetweenPoints(LEFT*4, ORIGIN, angle=-PI/3)\n"
+    "        arc2 = ArcBetweenPoints(ORIGIN, RIGHT*4, angle=-PI/4)\n"
+    "        self.add(ball)\n"
+    "        self.play(MoveAlongPath(ball, arc1), run_time=1.5)\n"
+    "        self.play(MoveAlongPath(ball, arc2), run_time=1.5)\n"
     "        self.wait(1)\n\n"
-    "CRITICAL RULES:\n"
-    "1. Output ONLY Python code (no markdown, no explanations)\n"
-    "2. Class name: GeneratedScene(Scene) or GeneratedScene(ThreeDScene) for 3D\n"
-    "3. Import: from manim import *\n"
-    "4. Standard objects: Circle, Square, Line, Text, Dot, Arrow, Axes, etc.\n"
-    "5. Animations: Create(), Write(), FadeIn(), FadeOut(), ReplacementTransform()\n"
-    "6. Motion: obj.animate.move_to() or MoveAlongPath()\n"
-    "7. Rotation: obj.animate.rotate(angle)\n"
-    "8. Use UP TO 12 self.play() calls — use as many as the description requires\n"
-    "9. Always end with self.wait(1)\n"
-    "10. Objects must be VISIBLE: use BLUE, RED, YELLOW, GREEN (not BLACK on black bg)\n"
-    "11. Keep positions within: x=[-6,6], y=[-3,3]\n"
-    "12. Use specific parameters from the spec (coordinates, colors, sizes, counts)\n\n"
-    "FORBIDDEN — these cause errors in Manim v0.17.3:\n"
-    "13. ShowCreation → use Create() instead\n"
-    "14. FadeInFrom → use FadeIn() instead\n"
-    "15. Write() IS valid for Text — do NOT replace it with Create() for text\n"
-    "16. MathTex / Tex → use Text() for ALL labels (LaTeX not installed)\n"
-    "17. Line() only accepts TWO points:\n"
-    "    - CORRECT: Line(start_point, end_point, color=RED)\n"
-    "    - For multiple segments: use multiple Line objects or VMobject().set_points_as_corners([p1,p2,p3])\n"
-    "18. Undefined constants — these do NOT exist in Manim v0.17.3:\n"
-    "    - Z / Z_AXIS → use OUT\n"
-    "    - X_AXIS → use RIGHT\n"
-    "    - Y_AXIS → use UP\n"
-    "    - np.pi → use PI (or import numpy as np first)\n"
-    "    - TAU is valid\n"
-    "19. 3D scenes: use ThreeDScene, call set_camera_orientation() first, import numpy as np\n"
-    "20. NEVER use Rotate() on a VGroup with more than 8 objects (causes timeout)\n"
-    "21. NEVER use run_time > 3 per self.play() call\n"
-    "22. NEVER use about_axis= inside rotate(); use axis= instead\n"
-    "23. Avoid Cylinder, Sphere, Cone on free-tier — use ParametricFunction instead\n\n"
-    "Do NOT use undefined objects or custom classes.\n"
-    "Output pure Python code only."
+    "Example 4 — 'Draw a neural network':\n"
+    "from manim import *\n"
+    "class GeneratedScene(Scene):\n"
+    "    def construct(self):\n"
+    "        r = 0.25\n"
+    "        l1 = VGroup(*[Circle(radius=r,color=BLUE).move_to([-3,y,0]) for y in [-1.5,0,1.5]])\n"
+    "        l2 = VGroup(*[Circle(radius=r,color=GREEN).move_to([0,y,0]) for y in [-1.5,0,1.5]])\n"
+    "        l3 = VGroup(*[Circle(radius=r,color=RED).move_to([3,y,0]) for y in [-1.5,0,1.5]])\n"
+    "        c12 = VGroup(*[Line(a.get_center(),b.get_center(),stroke_width=1,color=GRAY) for a in l1 for b in l2])\n"
+    "        c23 = VGroup(*[Line(a.get_center(),b.get_center(),stroke_width=1,color=GRAY) for a in l2 for b in l3])\n"
+    "        self.play(Create(l1))\n"
+    "        self.play(Create(c12))\n"
+    "        self.play(Create(l2))\n"
+    "        self.play(Create(c23))\n"
+    "        self.play(Create(l3))\n"
+    "        self.wait(1)\n\n"
+    "Example 5 — 'Plot y = sin(x) on axes':\n"
+    "from manim import *\n"
+    "import numpy as np\n"
+    "class GeneratedScene(Scene):\n"
+    "    def construct(self):\n"
+    "        axes = Axes(x_range=[-4,4,1], y_range=[-1.5,1.5,0.5],\n"
+    "                    axis_config={'include_tip': True})\n"
+    "        graph = axes.plot(lambda x: np.sin(x), color=BLUE)\n"
+    "        label = Text('y = sin(x)', font_size=28, color=BLUE).to_corner(UL)\n"
+    "        self.play(Create(axes))\n"
+    "        self.play(Create(graph), Write(label))\n"
+    "        self.wait(2)\n\n"
+    "══════════════════════════════════════════\n"
+    "OUTPUT RULES\n"
+    "══════════════════════════════════════════\n"
+    "1. Output ONLY raw Python code — no markdown, no triple backticks, no explanation\n"
+    "2. First line must be: from manim import *\n"
+    "3. Class must be named exactly: GeneratedScene\n"
+    "4. Use ThreeDScene only if the prompt requires 3D objects\n"
+    "5. Always end with self.wait(1)\n"
+    "6. Use up to 12 self.play() calls\n"
+    "7. Every color mentioned by the user MUST appear in the code\n"
+    "8. Every object mentioned by the user MUST appear in the code\n"
+    "9. Steps must appear in the SAME ORDER as described by the user\n"
 )
 
+# ---------------------------------------------------------------------------
+# Code extraction
+# ---------------------------------------------------------------------------
 
-def extract_code_from_response(text: str) -> str:
-    """Extract Python code from LLM response, handling markdown code blocks."""
+
+def _extract_code(text: str) -> str:
+    """Strip markdown fences if present, return raw code."""
     if not text:
         return ""
-    pattern = r"```(?:python)?\n([\s\S]*?)```"
-    match = re.search(pattern, text, re.IGNORECASE)
-    if match:
-        return match.group(1).strip()
+    # Strip ```python ... ``` or ``` ... ```
+    m = re.search(r"```(?:python)?\n?([\s\S]*?)```", text, re.IGNORECASE)
+    if m:
+        return m.group(1).strip()
     return text.strip()
 
 
-_FORBIDDEN_MANIM_NAMES = {
-    r"\bZ\b",
-    r"\bZ_AXIS\b",
-    r"\bX_AXIS\b",
-    r"\bY_AXIS\b",
-    r"\babout_axis\b",
-    r"\bShowCreation\b",
-    r"\bFadeInFrom\b",
-    r"\bMathTex\b",
-    r"\bTex\b(?!t)",
-}
+# ---------------------------------------------------------------------------
+# Syntax validation (no subprocess needed)
+# ---------------------------------------------------------------------------
 
 
-def _find_forbidden_constants(code: str) -> list:
-    """Return list of forbidden Manim names found in code, empty list if clean."""
-    found = []
-    for pattern in _FORBIDDEN_MANIM_NAMES:
+def _syntax_check(code: str) -> Optional[str]:
+    """
+    Return None if code is syntactically valid Python, else return the error
+    message. Uses the built-in ast module — no subprocess overhead.
+    """
+    try:
+        ast.parse(code)
+        return None
+    except SyntaxError as e:
+        return f"SyntaxError at line {e.lineno}: {e.msg}"
+
+
+# ---------------------------------------------------------------------------
+# Forbidden API guard
+# ---------------------------------------------------------------------------
+
+_FORBIDDEN = [
+    (r"\bShowCreation\b", "ShowCreation is removed — use Create()"),
+    (r"\bFadeInFrom\b", "FadeInFrom is removed — use FadeIn()"),
+    (r"\bMathTex\b", "MathTex requires LaTeX which is not installed — use Text()"),
+    (r"\bTex\b(?!t)", "Tex requires LaTeX which is not installed — use Text()"),
+    (r"\bX_AXIS\b", "X_AXIS does not exist — use RIGHT"),
+    (r"\bY_AXIS\b", "Y_AXIS does not exist — use UP"),
+    (r"\bZ_AXIS\b", "Z_AXIS does not exist — use OUT"),
+    (r"\bZ\b(?!\w)", "Bare 'Z' constant does not exist — use OUT"),
+    (r"\babout_axis\b", "about_axis is not valid — use axis="),
+]
+
+
+def _check_forbidden(code: str) -> Optional[str]:
+    """Return a description of the first forbidden pattern found, or None."""
+    for pattern, msg in _FORBIDDEN:
         if re.search(pattern, code):
-            found.append(pattern.replace(r"\b", "").replace("(?!t)", ""))
-    return found
-
-
-def generate_with_ai(technical_spec: str, max_retries: int = 2) -> Optional[str]:
-    """Generate Manim code using AI based on technical specification."""
-    logger.info("Attempting AI code generation")
-    last_rejection_reason: Optional[str] = None
-
-    for attempt in range(1, max_retries + 1):
-        try:
-            logger.info(f"AI generation attempt {attempt}/{max_retries}")
-
-            ordering_reminder = (
-                "ORDERING REMINDER: Write self.play() calls in the EXACT order "
-                "described below. The first action mentioned must be the first "
-                "self.play() call. Do NOT group all creations first.\n\n"
-            )
-
-            user_msg = (
-                f"{ordering_reminder}"
-                f"Technical Specification:\n\n{technical_spec}\n\n"
-                f"Generate Manim code:"
-            )
-
-            if attempt > 1 and last_rejection_reason:
-                user_msg = (
-                    f"{ordering_reminder}"
-                    f"Technical Specification:\n\n{technical_spec}\n\n"
-                    f"IMPORTANT — your previous attempt was REJECTED:\n"
-                    f"{last_rejection_reason}\n\n"
-                    f"Fix the above issue and regenerate correct Manim code:"
-                )
-
-            client = get_client()
-            response = client.chat.completions.create(
-                model=MODEL_NAME,
-                messages=[
-                    {"role": "system", "content": AI_SYSTEM_PROMPT},
-                    {"role": "user", "content": user_msg},
-                ],
-                temperature=0.1,
-                max_tokens=2000,
-            )
-
-            if not response or not response.choices:
-                logger.warning(f"AI attempt {attempt}: Empty response from API")
-                last_rejection_reason = "The API returned an empty response."
-                continue
-
-            code = extract_code_from_response(response.choices[0].message.content)
-
-            if not code or len(code) < 50:
-                logger.warning(
-                    f"AI attempt {attempt}: Code too short ({len(code)} chars)"
-                )
-                last_rejection_reason = "The generated code was too short or empty."
-                continue
-
-            if "class GeneratedScene" not in code or "def construct" not in code:
-                last_rejection_reason = (
-                    "Missing required class GeneratedScene or def construct."
-                )
-                logger.warning(f"AI attempt {attempt}: {last_rejection_reason}")
-                continue
-
-            forbidden = _find_forbidden_constants(code)
-            if forbidden:
-                last_rejection_reason = (
-                    f"Your code used undefined Manim v0.17.3 constants: {forbidden}. "
-                    "Use RIGHT instead of X_AXIS, UP instead of Y_AXIS, OUT instead of Z/Z_AXIS. "
-                    "Do NOT use about_axis, MathTex, Tex, ShowCreation, or FadeInFrom."
-                )
-                logger.warning(
-                    f"AI attempt {attempt}: forbidden constants {forbidden} — retrying"
-                )
-                continue
-
-            has_rotate = bool(re.search(r"\bRotate\s*\(", code))
-            range_count = len(re.findall(r"\brange\s*\(", code))
-            if has_rotate and range_count >= 2:
-                last_rejection_reason = (
-                    "Your code uses Rotate() on a VGroup built with range() — this will time out. "
-                    "Use ParametricFunction for smooth curves instead. "
-                    "Animate with obj.animate.rotate(PI/4) in a single play()."
-                )
-                logger.warning(
-                    f"AI attempt {attempt}: Rotate()+range() pattern — retrying"
-                )
-                continue
-
-            large_rts = re.findall(r"run_time\s*=\s*(\d+(?:\.\d+)?)", code)
-            if any(float(rt) > 4 for rt in large_rts):
-                last_rejection_reason = (
-                    f"Your code uses run_time={large_rts} which exceeds the 4s limit. "
-                    "Keep every self.play() call to run_time <= 3."
-                )
-                logger.warning(f"AI attempt {attempt}: run_time too large — retrying")
-                continue
-
-            logger.info(f"AI code generation successful ({len(code)} characters)")
-            return code
-
-        except Exception as e:
-            safe_error = str(e)[:200]
-            logger.error(f"AI attempt {attempt} failed: {safe_error}")
-            last_rejection_reason = f"API error: {safe_error}"
-            if attempt == max_retries:
-                return None
-            continue
-
+            return msg
     return None
 
 
-def validate_code_basic(code: str) -> bool:
-    """Basic validation of generated code."""
-    if not code or len(code) < 50:
-        return False
+def _check_performance(code: str) -> Optional[str]:
+    """Return a warning if code contains known performance anti-patterns."""
+    has_rotate = bool(re.search(r"\bRotate\s*\(", code))
+    range_count = len(re.findall(r"\brange\s*\(", code))
+    if has_rotate and range_count >= 2:
+        return (
+            "Rotate() on a large VGroup (built with range()) causes timeout. "
+            "Use obj.animate.rotate() or ParametricFunction instead."
+        )
+    large_rts = re.findall(r"run_time\s*=\s*(\d+(?:\.\d+)?)", code)
+    if any(float(rt) > 3 for rt in large_rts):
+        return f"run_time values {large_rts} exceed the 3s limit per play() call."
+    return None
 
-    required = [
+
+def _validate(code: str) -> Optional[str]:
+    """
+    Full validation pipeline. Returns None if code passes all checks,
+    or a human-readable error string describing the first failure.
+    """
+    if not code or len(code) < 60:
+        return "Generated code is too short."
+
+    for required in [
         "from manim import",
         "class GeneratedScene",
         "def construct",
         "self.play",
         "self.wait",
-    ]
+    ]:
+        if required not in code:
+            return f"Missing required element: '{required}'"
 
-    if not all(req in code for req in required):
-        return False
+    syntax_err = _syntax_check(code)
+    if syntax_err:
+        return syntax_err
 
-    if _find_forbidden_constants(code):
-        return False
+    forbidden_err = _check_forbidden(code)
+    if forbidden_err:
+        return forbidden_err
 
-    has_rotate_animation = bool(re.search(r"\bRotate\s*\(", code))
-    range_counts = len(re.findall(r"\brange\s*\(", code))
-    if has_rotate_animation and range_counts >= 2:
-        logger.warning("Code rejected: Rotate() + range() will exceed render timeout.")
-        return False
+    perf_err = _check_performance(code)
+    if perf_err:
+        return perf_err
 
-    large_runtimes = re.findall(r"run_time\s*=\s*(\d+(?:\.\d+)?)", code)
-    if any(float(rt) > 4 for rt in large_runtimes):
-        logger.warning(
-            f"Code rejected: run_time values {large_runtimes} exceed 4s limit."
+    return None
+
+
+# ---------------------------------------------------------------------------
+# Core AI call
+# ---------------------------------------------------------------------------
+
+
+def _call_llm(messages: list, max_tokens: int = 2000) -> Optional[str]:
+    """Single LLM call. Returns raw text content or None on failure."""
+    try:
+        client = get_client()
+        response = client.chat.completions.create(
+            model=MODEL_NAME,
+            messages=messages,
+            temperature=0.1,  # Low temperature = consistent, ordered output
+            max_tokens=max_tokens,
         )
-        return False
+        if response and response.choices:
+            return response.choices[0].message.content or ""
+        return None
+    except Exception as e:
+        logger.error(f"LLM call failed: {str(e)[:200]}")
+        return None
 
-    return True
+
+# ---------------------------------------------------------------------------
+# Stage 1: Generate code from user prompt
+# ---------------------------------------------------------------------------
 
 
-def _generate_dynamic_fallback(technical_spec: str) -> str:
-    """Generate a dynamic fallback animation when AI and templates fail."""
+def _generate_initial(user_prompt: str) -> Optional[str]:
+    """
+    Stage 1: Generate Manim code directly from the user prompt.
+    No template matching — the system prompt contains all necessary context.
+    """
+    ordering_note = (
+        "REMINDER: Write self.play() calls in the EXACT order described. "
+        "The first thing mentioned must be the first self.play() call.\n\n"
+        f"Animation request: {user_prompt}"
+    )
+    messages = [
+        {"role": "system", "content": MASTER_SYSTEM_PROMPT},
+        {"role": "user", "content": ordering_note},
+    ]
+    raw = _call_llm(messages)
+    if not raw:
+        return None
+    return _extract_code(raw)
+
+
+# ---------------------------------------------------------------------------
+# Stage 2: Self-healing — fix code given an error
+# Inspired by rohitg00/manim-video-generator's error-feedback loop
+# ---------------------------------------------------------------------------
+
+
+def _fix_code(user_prompt: str, broken_code: str, error: str) -> Optional[str]:
+    """
+    Stage 2: Feed the broken code + error back to the LLM and ask it to fix it.
+    This is the self-healing loop that makes the system robust.
+    """
+    logger.info(f"Self-healing: error = {error[:120]}")
+    fix_prompt = (
+        f"The following Manim code was generated for the request:\n"
+        f"'{user_prompt}'\n\n"
+        f"But it failed with this error:\n"
+        f"{error}\n\n"
+        f"Here is the broken code:\n"
+        f"{broken_code}\n\n"
+        f"Fix ALL errors and return ONLY the corrected Python code. "
+        f"Do not change the animation logic — only fix what's broken. "
+        f"Keep the same self.play() order as in the original request."
+    )
+    messages = [
+        {"role": "system", "content": MASTER_SYSTEM_PROMPT},
+        {"role": "user", "content": fix_prompt},
+    ]
+    raw = _call_llm(messages)
+    if not raw:
+        return None
+    return _extract_code(raw)
+
+
+# ---------------------------------------------------------------------------
+# Public API: generate_code
+# ---------------------------------------------------------------------------
+
+
+def generate_code(
+    user_prompt: str, render_error: Optional[str] = None
+) -> Tuple[str, str]:
+    """
+    Generate Manim code from a user prompt.
+
+    Args:
+        user_prompt:  The original user request (plain English).
+        render_error: If provided, this is a Manim render error from a previous
+                      attempt. The LLM will attempt to fix the code rather than
+                      generate from scratch. This is the self-healing entry point.
+
+    Returns:
+        Tuple of (manim_code, method) where method is 'ai' or 'fallback'.
+    """
+    MAX_VALIDATION_RETRIES = 3
+
+    # ── Path A: self-healing from a render error ────────────────────────
+    if render_error:
+        logger.info("Entering self-healing mode with render error")
+        # We need the last generated code — it's passed via render_error context
+        # The caller in app.py should pass "code|||error" as render_error
+        if "|||" in render_error:
+            broken_code, error_msg = render_error.split("|||", 1)
+        else:
+            broken_code, error_msg = "", render_error
+
+        fixed = _fix_code(user_prompt, broken_code, error_msg)
+        if fixed:
+            err = _validate(fixed)
+            if err is None:
+                logger.info("Self-healing produced valid code")
+                return fixed, "ai_healed"
+            logger.warning(f"Self-healed code still invalid: {err}")
+        # Fall through to fresh generation if healing fails
+        logger.warning("Self-healing failed, generating fresh")
+
+    # ── Path B: fresh generation with validation retry loop ────────────
+    last_code = ""
+    last_error = ""
+
+    for attempt in range(1, MAX_VALIDATION_RETRIES + 1):
+        logger.info(f"Generation attempt {attempt}/{MAX_VALIDATION_RETRIES}")
+
+        if attempt == 1:
+            code = _generate_initial(user_prompt)
+        else:
+            # On retry, use the fix path with the validation error
+            code = _fix_code(user_prompt, last_code, last_error)
+
+        if not code:
+            last_error = "LLM returned empty response."
+            logger.warning(f"Attempt {attempt}: empty response")
+            continue
+
+        last_code = code
+        validation_error = _validate(code)
+
+        if validation_error is None:
+            logger.info(
+                f"Valid code generated on attempt {attempt} ({len(code)} chars)"
+            )
+            return code, "ai"
+
+        last_error = validation_error
+        logger.warning(f"Attempt {attempt} validation failed: {validation_error}")
+
+    # ── Path C: guaranteed fallback ─────────────────────────────────────
+    logger.error("All generation attempts failed, returning fallback animation")
+    return _make_fallback(user_prompt), "fallback"
+
+
+def _make_fallback(user_prompt: str) -> str:
+    """Minimal guaranteed-to-render fallback animation."""
     import textwrap
 
-    subject = "Requested Animation"
-    match = re.search(r"Animation Type:\s*([^\n]+)", technical_spec, re.IGNORECASE)
-    if match and match.group(1).strip():
-        subject = match.group(1).strip().title()
-    else:
-        lines = [line.strip() for line in technical_spec.split("\n") if line.strip()]
-        if lines:
-            subject = lines[0][:40] + ("..." if len(lines[0]) > 40 else "")
-
-    safe_subject = subject.replace('"', '\\"').replace("'", "\\'")
-    wrapped_lines = textwrap.wrap(safe_subject, width=30)
-    formatted_subject = "\\n".join(wrapped_lines)
-
+    safe = user_prompt.replace('"', "'")[:50]
+    lines = textwrap.wrap(safe, width=28)
+    label = "\\n".join(lines) if lines else "Animation"
     return (
         "from manim import *\n\n"
         "class GeneratedScene(Scene):\n"
         "    def construct(self):\n"
-        '        title = Text("Fallback Generation:", font_size=36, color=BLUE)\n'
-        f'        subtitle = Text("{formatted_subject}", font_size=40)\n'
-        '        warning = Text("(Complexity exceeded AI limits)", font_size=24, color=GRAY)\n\n'
-        "        group = VGroup(title, subtitle, warning).arrange(DOWN, buff=0.5)\n\n"
-        "        self.play(FadeIn(group, shift=UP), run_time=1.5)\n"
-        "        self.wait(1.5)\n"
-        "        self.play(FadeOut(group, shift=DOWN), run_time=1.5)\n"
+        '        title = Text("Could not generate:", font_size=32, color=YELLOW)\n'
+        f'        req = Text("{label}", font_size=28, color=WHITE)\n'
+        "        group = VGroup(title, req).arrange(DOWN, buff=0.4)\n"
+        "        self.play(FadeIn(group, shift=UP))\n"
+        "        self.wait(2)\n"
+        "        self.play(FadeOut(group))\n"
         "        self.wait(1)\n"
     )
 
 
-def generate_code(technical_spec: str) -> Tuple[str, str]:
-    """
-    Generate Manim code from technical specification.
-
-    Three-tier approach:
-    1. Template matching (fastest, most reliable)
-    2. AI generation (flexible, for novel requests)
-    3. Dynamic fallback (guaranteed to work)
-
-    Returns:
-        Tuple of (manim_code, generation_method)
-    """
-    logger.info("Starting code generation")
-
-    spec_lower = technical_spec.lower()
-    enhanced_keywords = [
-        "line through",
-        "connect",
-        "draw a line",
-        "add a line",
-        "show trajectory",
-        "fit a curve",
-        "regression",
-        "and also",
-        "as well as",
-        "additionally",
-        "plus",
-    ]
-    has_enhanced_requirements = any(kw in spec_lower for kw in enhanced_keywords)
-
-    if not has_enhanced_requirements:
-        logger.info("Attempting template matching")
-        template_code = match_template(technical_spec)
-        if template_code is not None and template_code != TEMPLATE_FALLBACK:
-            logger.info("Template match found, using proven code")
-            return template_code, "template"
-    else:
-        logger.info("Enhanced requirements detected, skipping templates")
-
-    logger.info("Trying AI generation")
-    ai_code = generate_with_ai(technical_spec)
-
-    if ai_code and validate_code_basic(ai_code):
-        logger.info("AI generation successful")
-        return ai_code, "ai"
-
-    logger.warning(
-        "ALL generation tiers failed (template->AI). "
-        "Returning dynamic fallback. Check GROQ_API_KEY validity."
-    )
-    fallback_code = _generate_dynamic_fallback(technical_spec)
-    return fallback_code, "fallback"
+# ---------------------------------------------------------------------------
+# Legacy compatibility shim
+# app.py calls generate_code_with_retries(technical_spec) — we keep that
+# signature but route everything through the new pipeline.
+# ---------------------------------------------------------------------------
 
 
 def generate_code_with_retries(
-    technical_spec: str, max_attempts: int = 2
+    technical_spec: str,
+    max_attempts: int = 2,
+    render_error: Optional[str] = None,
 ) -> Tuple[str, str]:
     """
-    Generate code with retry logic.
+    Backward-compatible entry point called by app.py.
 
-    Returns:
-        Tuple of (manim_code, generation_method)
+    'technical_spec' is now treated as the user prompt directly —
+    the prompt expander output is still accepted but no longer parsed
+    for template routing.
     """
-    for attempt in range(1, max_attempts + 1):
-        try:
-            logger.info(f"Code generation attempt {attempt}/{max_attempts}")
-            code, method = generate_code(technical_spec)
+    return generate_code(technical_spec, render_error=render_error)
 
-            if validate_code_basic(code):
-                return code, method
-            else:
-                logger.warning(f"Attempt {attempt}: Basic validation failed")
-                continue
 
-        except Exception as e:
-            safe_error = str(e)[:200]
-            logger.error(f"Attempt {attempt} error: {safe_error}")
-            if attempt == max_attempts:
-                logger.error("All attempts failed, returning fallback")
-                return TEMPLATE_FALLBACK, "fallback"
-            continue
+# ---------------------------------------------------------------------------
+# validate_code_basic — kept for backward compat with app.py health checks
+# ---------------------------------------------------------------------------
 
-    return TEMPLATE_FALLBACK, "fallback"
+
+def validate_code_basic(code: str) -> bool:
+    return _validate(code) is None
