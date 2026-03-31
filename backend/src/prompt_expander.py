@@ -1,272 +1,202 @@
 """
-Simplified Prompt Expander - Converts user input to plain text technical specifications.
-
-This module takes vague user prompts and expands them into detailed technical
-descriptions that the generator can use to create Manim code.
-
-Output format is plain text with clear sections for objects, positions, motion, etc.
-No complex JSON schemas - just natural language that's easy to parse and debug.
+Prompt Expander - Converts user input to plain text technical specifications.
 """
 
 import os
 import logging
-from typing import Optional
 from groq import Groq
 
 logger = logging.getLogger(__name__)
 
-# Initialize Groq client
 MODEL_NAME = os.getenv("GROQ_MODEL", "llama-3.3-70b-versatile")
 client = Groq(api_key=os.getenv("GROQ_API_KEY"))
 
-# Simplified system prompt for plain text output
-SYSTEM_PROMPT = """You are an animation specification expert. Convert user requests into clear, detailed technical specifications for Manim animations.
-
-OUTPUT FORMAT (Plain Text):
-```
-Animation Type: [transformation/motion/growth/rotation/network/etc]
-
-Objects:
-- [Description of each object with size, color, shape]
-
-Positions:
-- [Where each object should be placed]
-
-Motion/Changes:
-- [What should move, transform, or change]
-
-Sequence:
-1. [First action with duration]
-2. [Second action with duration]
-3. [etc]
-
-Total Duration: [X seconds]
-
-Technical Notes:
-- [Any specific Manim techniques to use]
-```
-
-EXAMPLES:
-
-Input: "circle to square"
-Output:
-```
-Animation Type: transformation
-
-Objects:
-- Blue circle with radius 1.0
-- Red square with side length 2.0
-
-Positions:
-- Both objects centered at origin (0, 0, 0)
-
-Motion/Changes:
-- Circle morphs into square using ReplacementTransform
-
-Sequence:
-1. Create circle with Create animation (1 second)
-2. Transform circle to square with ReplacementTransform (2 seconds)
-3. Hold final state (1 second)
-
-Total Duration: 4 seconds
-
-Technical Notes:
-- Use ReplacementTransform for smooth morphing
-- Objects should be clearly visible and centered
-```
-
-Input: "bouncing ball"
-Output:
-```
-Animation Type: motion along path
-
-Objects:
-- Yellow circle with radius 0.5 (representing a ball)
-
-Positions:
-- Start at LEFT side of screen (-4, 0, 0)
-- End at RIGHT side of screen (4, 0, 0)
-
-Motion/Changes:
-- Ball moves along downward arc path (parabolic trajectory)
-- Simulates bouncing motion with 2-3 bounces
-
-Sequence:
-1. Ball appears at left (0.5 seconds)
-2. Ball moves along arc path with bouncing motion (3 seconds)
-3. Ball comes to rest at right (0.5 seconds)
-
-Total Duration: 4 seconds
-
-Technical Notes:
-- Use MoveAlongPath with parabolic arc
-- Arc should curve downward to simulate gravity
-- Smooth continuous motion
-```
-
-Input: "simple pendulum"
-Output:
-```
-Animation Type: rotation about pivot
-
-Objects:
-- Pivot point: small black dot at (0, 2, 0)
-- Rod: thin line from pivot to bob
-- Bob: blue circle with radius 0.3 at end of rod
-
-Positions:
-- Pivot at top center (0, 2, 0)
-- Rod extends downward 2 units
-- Bob at bottom of rod (0, 0, 0) initially
-
-Motion/Changes:
-- Entire pendulum (rod + bob) rotates about pivot point
-- Swings left and right with decreasing amplitude
-
-Sequence:
-1. Create pivot, rod, and bob (1 second)
-2. Swing right 30 degrees (1 second)
-3. Swing left 60 degrees (1.5 seconds)
-4. Swing right 30 degrees (1 second)
-5. Come to rest at center (0.5 seconds)
-
-Total Duration: 5 seconds
-
-Technical Notes:
-- Use Rotate animation with about_point=pivot
-- Group rod and bob together with VGroup
-- All components must be visible (not black on black)
-- Use BLUE or YELLOW for bob color
-```
-
-Input: "neural network"
-Output:
-```
-Animation Type: network structure with sequential growth
-
-Objects:
-Layer 1 (Input): 3 blue circles, radius 0.25
-- Position at x=-3, y positions: [-1.5, 0, 1.5]
-
-Layer 2 (Hidden): 3 green circles, radius 0.25
-- Position at x=0, y positions: [-1.5, 0, 1.5]
-
-Layer 3 (Output): 3 red circles, radius 0.25
-- Position at x=3, y positions: [-1.5, 0, 1.5]
-
-Connections: Gray lines connecting all neurons between adjacent layers
-- 9 lines from layer 1 to layer 2 (all-to-all)
-- 9 lines from layer 2 to layer 3 (all-to-all)
-
-Positions:
-- Spread horizontally across screen
-- Evenly spaced vertically within each layer
-
-Motion/Changes:
-- Sequential appearance layer by layer
-- Grow from left to right showing network building
-
-Sequence:
-1. Create layer 1 neurons simultaneously (1 second)
-2. Draw all connections from layer 1 to layer 2 (1 second)
-3. Create layer 2 neurons simultaneously (1 second)
-4. Draw all connections from layer 2 to layer 3 (1 second)
-5. Create layer 3 neurons simultaneously (1 second)
-6. Hold final network (1 second)
-
-Total Duration: 6 seconds
-
-Technical Notes:
-- Use VGroup with list comprehension for neuron layers
-- Use nested loops for connections: for n1 in layer1 for n2 in layer2
-- Line thickness: stroke_width=1
-- Create animations should be parallel within each layer
-```
-
-RULES:
-1. Always provide specific numbers (positions, sizes, durations)
-2. Be explicit about colors to ensure visibility
-3. Describe spatial layout clearly
-4. Break complex animations into clear sequences
-5. Suggest appropriate Manim techniques
-6. For unfamiliar concepts, map to basic geometric patterns
-7. Keep total duration under 10 seconds
-8. Ensure objects are positioned within visible range (x: -6 to 6, y: -3 to 3)
-
-Output ONLY the plain text specification. No additional commentary.
-"""
+SYSTEM_PROMPT = (
+    "You are an animation specification expert. Convert user requests into clear, "
+    "detailed technical specifications for Manim animations.\n\n"
+    "RULE #0 — PRESERVE NARRATIVE ORDER (HIGHEST PRIORITY)\n"
+    "The Sequence steps MUST follow the EXACT order described by the user.\n"
+    "- If user says 'draw a red circle and transform it into a square':\n"
+    "    Step 1: Create the circle\n"
+    "    Step 2: Transform circle into square\n"
+    "  NEVER reverse these steps.\n"
+    "- Objects listed under 'Objects:' are ONLY objects present at the very start.\n"
+    "  Objects that appear later in the animation belong in the Sequence, NOT in Objects.\n"
+    "- Do NOT group all creations first and all animations second.\n\n"
+    "OUTPUT FORMAT:\n"
+    "Animation Type: [type]\n\n"
+    "Objects:\n"
+    "- [ONLY objects present at scene start]\n\n"
+    "Positions:\n"
+    "- [Where starting objects are placed]\n\n"
+    "Sequence:\n"
+    "1. [First action — object name, animation type, duration]\n"
+    "2. [Second action — if a new object appears here, say so]\n"
+    "3. [etc — maintain the user's narrative order exactly]\n\n"
+    "Total Duration: [X seconds]\n\n"
+    "Technical Notes:\n"
+    "- [Specific Manim techniques to use]\n\n"
+    "EXAMPLE 1\n"
+    "Input: 'draw a red circle and transform it into a blue square'\n"
+    "Animation Type: transformation\n\n"
+    "Objects:\n"
+    "- Red circle with radius 1.5, centered at origin\n"
+    "  (The square does NOT go here — it only appears after the transform)\n\n"
+    "Positions:\n"
+    "- Circle centered at origin (0, 0, 0)\n\n"
+    "Sequence:\n"
+    "1. Create the red circle with Create animation (1 second)\n"
+    "2. Transform the circle into a blue square side 2.5 using ReplacementTransform (2 seconds)\n"
+    "3. Hold final state (1 second)\n\n"
+    "Total Duration: 4 seconds\n\n"
+    "Technical Notes:\n"
+    "- Use ReplacementTransform(circle, square)\n"
+    "- Instantiate the square before calling play(), but do NOT add it to the scene separately\n"
+    "- Square should be BLUE to contrast with the red circle\n\n"
+    "EXAMPLE 2\n"
+    "Input: 'show the word Hello, move it to the top, then fade it out'\n"
+    "Animation Type: text motion\n\n"
+    "Objects:\n"
+    "- Text 'Hello' in yellow, font size 60, starting at center\n\n"
+    "Positions:\n"
+    "- Text centered at origin (0, 0, 0)\n\n"
+    "Sequence:\n"
+    "1. Write the text 'Hello' using Write animation (1 second)\n"
+    "2. Move the text upward to (0, 2.5, 0) using animate.shift(UP * 2.5) (1 second)\n"
+    "3. Fade out the text using FadeOut (1 second)\n"
+    "4. Hold (0.5 seconds)\n\n"
+    "Total Duration: 3.5 seconds\n\n"
+    "Technical Notes:\n"
+    "- Use Write() for text appearance\n"
+    "- Use label.animate.shift(UP * 2.5) for smooth upward motion\n\n"
+    "EXAMPLE 3\n"
+    "Input: 'bouncing ball'\n"
+    "Animation Type: motion along path\n\n"
+    "Objects:\n"
+    "- Yellow circle with radius 0.5, starting at left side of screen\n\n"
+    "Positions:\n"
+    "- Start at (-4, 0, 0)\n\n"
+    "Sequence:\n"
+    "1. Ball appears at left side with FadeIn (0.5 seconds)\n"
+    "2. Ball moves along downward arc to center, first bounce (1.5 seconds)\n"
+    "3. Ball bounces back up and moves to right side along second arc (1.5 seconds)\n"
+    "4. Ball comes to rest at right side (0.5 seconds)\n\n"
+    "Total Duration: 4 seconds\n\n"
+    "Technical Notes:\n"
+    "- Use MoveAlongPath with ArcBetweenPoints for parabolic trajectory\n"
+    "- Arc should curve downward to simulate gravity\n\n"
+    "EXAMPLE 4\n"
+    "Input: 'neural network'\n"
+    "Animation Type: network structure with sequential growth\n\n"
+    "Objects:\n"
+    "- (No objects at scene start — all layers built sequentially)\n\n"
+    "Positions:\n"
+    "- Layer 1 at x=-3, Layer 2 at x=0, Layer 3 at x=3\n"
+    "- Three nodes per layer at y: -1.5, 0, 1.5\n\n"
+    "Sequence:\n"
+    "1. Create 3 blue circles (radius 0.25) at x=-3 for input layer (1 second)\n"
+    "2. Draw 9 gray lines connecting input to hidden layer (1 second)\n"
+    "3. Create 3 green circles (radius 0.25) at x=0 for hidden layer (1 second)\n"
+    "4. Draw 9 gray lines connecting hidden to output layer (1 second)\n"
+    "5. Create 3 red circles (radius 0.25) at x=3 for output layer (1 second)\n"
+    "6. Hold final network (1 second)\n\n"
+    "Total Duration: 6 seconds\n\n"
+    "Technical Notes:\n"
+    "- Use VGroup with list comprehension for each layer\n"
+    "- Use nested loops for connections\n"
+    "- Line stroke_width=1 for thin connection lines\n\n"
+    "RULES:\n"
+    "1. Always preserve the user's narrative order in the Sequence\n"
+    "2. Only list in Objects: things present at scene start\n"
+    "3. Always provide specific numbers (positions, sizes, durations)\n"
+    "4. Be explicit about colors to ensure visibility on dark background\n"
+    "5. Keep total duration under 10 seconds\n"
+    "6. Ensure objects stay within visible range (x: -6 to 6, y: -3 to 3)\n"
+    "7. Never reorder steps for aesthetic or technical reasons\n\n"
+    "Output ONLY the plain text specification. No additional commentary."
+)
 
 
 def expand_prompt(user_prompt: str, max_retries: int = 3) -> str:
     """
     Expand a user's simple prompt into a detailed technical specification.
-    
+
     Args:
         user_prompt: The user's simple request (e.g., "bouncing ball")
         max_retries: Maximum number of retry attempts
-        
+
     Returns:
         Plain text technical specification for the animation
-        
+
     Raises:
         RuntimeError: If expansion fails after all retries
     """
     if not user_prompt or not user_prompt.strip():
         raise ValueError("User prompt cannot be empty")
-    
+
     user_prompt = user_prompt.strip()
     logger.info(f"Expanding prompt: {user_prompt}")
-    
+
+    ordering_reminder = (
+        "IMPORTANT: Your Sequence steps MUST follow the EXACT order "
+        "described in the request below. Do not reorder steps.\n\n"
+        f"User request: {user_prompt}"
+    )
+
     for attempt in range(1, max_retries + 1):
         try:
             logger.info(f"Expansion attempt {attempt}/{max_retries}")
-            
+
             response = client.chat.completions.create(
                 model=MODEL_NAME,
                 messages=[
                     {"role": "system", "content": SYSTEM_PROMPT},
-                    {"role": "user", "content": f"User request: {user_prompt}"}
+                    {"role": "user", "content": ordering_reminder},
                 ],
-                temperature=0.3,  # Lower for more consistent output
-                max_tokens=1000,
+                temperature=0.15,
+                max_tokens=1200,
             )
-            
+
             if not response or not response.choices:
                 logger.warning(f"Attempt {attempt}: Empty response from API")
                 continue
-            
+
             technical_spec = response.choices[0].message.content.strip()
-            
+
             if not technical_spec:
                 logger.warning(f"Attempt {attempt}: Empty content in response")
                 continue
-            
-            # Basic validation - check if key sections are present
+
             required_sections = ["Animation Type:", "Objects:", "Sequence:"]
             if all(section in technical_spec for section in required_sections):
-                logger.info(f"Prompt expansion successful ({len(technical_spec)} characters)")
+                logger.info(
+                    f"Prompt expansion successful ({len(technical_spec)} characters)"
+                )
                 return technical_spec
             else:
-                logger.warning(f"Attempt {attempt}: Missing required sections in output")
+                logger.warning(
+                    f"Attempt {attempt}: Missing required sections in output"
+                )
                 continue
-                
+
         except Exception as e:
             logger.error(f"Attempt {attempt} failed: {e}")
             if attempt == max_retries:
-                raise RuntimeError(f"Prompt expansion failed after {max_retries} attempts: {e}")
+                raise RuntimeError(
+                    f"Prompt expansion failed after {max_retries} attempts: {e}"
+                )
             continue
-    
-    # If we get here, all retries failed
+
     raise RuntimeError(f"Prompt expansion failed after {max_retries} attempts")
 
 
 def expand_prompt_with_fallback(user_prompt: str) -> str:
     """
     Try to expand prompt, with fallback to basic specification on failure.
-    
+
     Args:
         user_prompt: The user's simple request
-        
+
     Returns:
         Technical specification (either expanded or fallback)
     """
@@ -274,32 +204,20 @@ def expand_prompt_with_fallback(user_prompt: str) -> str:
         return expand_prompt(user_prompt)
     except Exception as e:
         logger.error(f"Falling back to basic specification due to error: {e}")
-        
-        # Fallback: Create a basic specification
-        return f"""Animation Type: basic visualization
 
-Objects:
-- Blue circle with radius 1.0
-- Text label: "{user_prompt}"
-
-Positions:
-- Circle centered at origin (0, 0, 0)
-- Text above circle
-
-Motion/Changes:
-- Circle appears with Create animation
-- Text writes in with Write animation
-- Both grow slightly with scale animation
-
-Sequence:
-1. Create circle (1 second)
-2. Write text (1 second)
-3. Scale both objects by 1.2 (1 second)
-4. Hold (1 second)
-
-Total Duration: 4 seconds
-
-Technical Notes:
-- Basic fallback animation
-- Original request: {user_prompt}
-"""
+        return (
+            "Animation Type: basic visualization\n\n"
+            "Objects:\n"
+            "- Blue circle with radius 1.0, centered at origin\n\n"
+            "Positions:\n"
+            "- Circle centered at origin (0, 0, 0)\n\n"
+            "Sequence:\n"
+            "1. Create circle with Create animation (1 second)\n"
+            f'2. Write text label "{user_prompt}" above the circle (1 second)\n'
+            "3. Scale both objects by 1.2 (1 second)\n"
+            "4. Hold (1 second)\n\n"
+            "Total Duration: 4 seconds\n\n"
+            "Technical Notes:\n"
+            "- Basic fallback animation\n"
+            f"- Original request: {user_prompt}\n"
+        )
