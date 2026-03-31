@@ -108,6 +108,23 @@ CRITICAL RULES:
     - Correct: Line(start_point, end_point, color=RED)
     - WRONG: Line(point1, point2, point3) - this will ERROR
     - For multiple connected points: create multiple Line objects OR use VMobject().set_points_as_corners([p1, p2, p3])
+16. **FORBIDDEN CONSTANTS — these do NOT exist in Manim v0.17.3 and will cause NameError:**
+    - `Z` → DOES NOT EXIST. Use `OUT` (= np.array([0, 0, 1])) for the Z-axis direction.
+    - `Z_AXIS` → DOES NOT EXIST. Use `OUT` instead.
+    - `X_AXIS` → DOES NOT EXIST. Use `RIGHT` (= np.array([1, 0, 0])) instead.
+    - `Y_AXIS` → DOES NOT EXIST. Use `UP` (= np.array([0, 1, 0])) instead.
+    - `np.pi` → only available if you `import numpy as np`. Use `PI` (Manim constant) instead.
+    - `TAU` → IS available (= 2*PI). OK to use.
+    - Summary of correct axis vectors: RIGHT=X, UP=Y, OUT=Z
+17. **3D ANIMATIONS must use ThreeDScene, not Scene**
+    - If you use ANY of: Cylinder, Sphere, Cube, Prism, Cone, ThreeDAxes, set_camera_orientation
+      → the class MUST be `GeneratedScene(ThreeDScene)`, never `GeneratedScene(Scene)`
+    - For 3D scenes: always call `self.set_camera_orientation(phi=75*DEGREES, theta=30*DEGREES)` first
+    - For 3D scenes: always `import numpy as np` at the top (needed for np.array operations)
+18. **AVOID complex 3D objects** on free-tier (CPU limited):
+    - AVOID: Cylinder, Sphere, Cone — these render slowly
+    - PREFER: Line, Dot, Circle, Arc — render in <10 seconds
+    - For a DNA helix: use `ParametricFunction` with `np.sin`/`np.cos` in a 2D Scene, NOT Cylinders
 
 CUSTOMIZATION INSTRUCTIONS:
 - If the spec mentions specific coordinates, USE THEM EXACTLY
@@ -173,6 +190,14 @@ def generate_with_ai(technical_spec: str, max_retries: int = 2) -> Optional[str]
 
             # Basic validation: check for required elements
             if "class GeneratedScene" in code and "def construct" in code:
+                # Check for known-undefined Manim constants that cause NameError at render.
+                # These are commonly hallucinated by LLMs trained on older Manim versions.
+                forbidden = _find_forbidden_constants(code)
+                if forbidden:
+                    logger.warning(
+                        f"AI attempt {attempt}: code uses undefined constants {forbidden} — retrying"
+                    )
+                    continue
                 logger.info(f"AI code generation successful ({len(code)} characters)")
                 return code
             else:
@@ -191,11 +216,40 @@ def generate_with_ai(technical_spec: str, max_retries: int = 2) -> Optional[str]
     return None
 
 
+# ---------------------------------------------------------------------------
+# Manim constant / API guard
+# ---------------------------------------------------------------------------
+
+# Names that LLMs commonly hallucinate but DON'T exist in Manim v0.17.3.
+# Using any of these causes an immediate NameError at render time.
+_FORBIDDEN_MANIM_NAMES = {
+    # Axis constants — use RIGHT / UP / OUT
+    r'\bZ\b',         # Z → OUT
+    r'\bZ_AXIS\b',    # Z_AXIS → OUT
+    r'\bX_AXIS\b',    # X_AXIS → RIGHT
+    r'\bY_AXIS\b',    # Y_AXIS → UP
+    # Old Manim API
+    r'\bShowCreation\b',
+    r'\bFadeInFrom\b',
+    r'\bMathTex\b',
+    r'\bTex\b(?!t)',   # Tex but not Text
+}
+
+def _find_forbidden_constants(code: str) -> list:
+    """Return list of forbidden Manim names found in code, empty list if clean."""
+    found = []
+    for pattern in _FORBIDDEN_MANIM_NAMES:
+        if re.search(pattern, code):
+            found.append(pattern.replace(r'\b', '').replace('(?!t)', ''))
+    return found
+
+
 def validate_code_basic(code: str) -> bool:
     """
     Basic validation of generated code.
 
-    Returns True if code passes basic structural checks.
+    Returns True if code passes basic structural checks AND does not contain
+    constants that are undefined in Manim v0.17.3.
     """
     if not code or len(code) < 50:
         return False
@@ -209,7 +263,14 @@ def validate_code_basic(code: str) -> bool:
         "self.wait"
     ]
 
-    return all(req in code for req in required)
+    if not all(req in code for req in required):
+        return False
+
+    # Reject code with known-undefined Manim constants
+    if _find_forbidden_constants(code):
+        return False
+
+    return True
 
 
 def generate_code(technical_spec: str) -> Tuple[str, str]:
