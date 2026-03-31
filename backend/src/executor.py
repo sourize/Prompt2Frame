@@ -17,6 +17,16 @@ logger = logging.getLogger(__name__)
 MEDIA_ROOT = Path(os.getenv("MEDIA_ROOT", os.path.abspath("media/videos")))
 MEDIA_ROOT.mkdir(parents=True, exist_ok=True)
 
+# Hard cap on how long a single Manim subprocess may run.
+# HF Spaces free tier CPU is limited; renders > 2 minutes typically OOM-kill
+# silently, causing Python to wait forever on process.communicate().
+# Set MANIM_TIMEOUT_SECONDS in your Space secrets to override.
+MANIM_HARD_TIMEOUT = int(os.getenv("MANIM_TIMEOUT_SECONDS", "120"))
+
+# When FORCE_LOW_QUALITY=1 all renders use -ql (480p15) to reduce CPU load.
+# Recommended for HF Spaces free tier.
+FORCE_LOW_QUALITY = os.getenv("FORCE_LOW_QUALITY", "0") == "1"
+
 class RenderError(Exception):
     """Custom exception for rendering errors."""
     pass
@@ -113,33 +123,56 @@ def _create_render_environment() -> Path:
 
 def _run_manim_command(cmd: List[str], timeout: int = 300) -> tuple[int, str, str]:
     """
-    Run a Manim command with proper error handling and timeout.
+    Run a Manim command with proper error handling and a hard timeout cap.
+
+    The `timeout` argument is the caller-requested limit, but it is further
+    capped by MANIM_HARD_TIMEOUT (default 120s) to prevent HF Spaces free-tier
+    OOM kills from leaving uvicorn workers waiting indefinitely.
     """
-    logger.info(f"Running command: {' '.join(cmd)}")
+    # Always respect the hard cap regardless of what the caller requested.
+    effective_timeout = min(timeout, MANIM_HARD_TIMEOUT)
+    logger.info(f"Running command (timeout={effective_timeout}s): {' '.join(cmd)}")
     process = None
-    
+
     try:
         process = subprocess.Popen(
             cmd,
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
             text=True,
-            env={**os.environ, "MANIM_DISABLE_CACHING": "1"}
+            env={
+                **os.environ,
+                "MANIM_DISABLE_CACHING": "1",
+                # Prevents Python from writing .pyc files during Manim's
+                # own module loading, shaving a few seconds off startup.
+                "PYTHONDONTWRITEBYTECODE": "1",
+            }
         )
-        
-        stdout, stderr = process.communicate(timeout=timeout)
+
+        stdout, stderr = process.communicate(timeout=effective_timeout)
         return process.returncode, stdout, stderr
-        
+
     except subprocess.TimeoutExpired:
         if process:
             try:
                 process.kill()
-                process.wait(timeout=5)  # Wait for process to terminate
-            except subprocess.TimeoutExpired:
-                process.terminate()  # Force terminate if kill doesn't work
                 process.wait(timeout=5)
-        stdout, stderr = process.communicate() if process else ("", "")
-        raise RenderError(f"Manim command timed out after {timeout} seconds")
+            except subprocess.TimeoutExpired:
+                process.terminate()
+                process.wait(timeout=5)
+        # Drain whatever stderr the process managed to emit before dying
+        try:
+            _, stderr_tail = process.communicate(timeout=3) if process else ("", "")
+        except Exception:
+            stderr_tail = ""
+        logger.error(
+            f"Manim process killed after {effective_timeout}s. "
+            f"Last stderr: {stderr_tail[-500:] if stderr_tail else '(empty)'}"
+        )
+        raise RenderError(
+            f"Manim render timed out after {effective_timeout}s. "
+            "Try a simpler prompt or use lower quality."
+        )
     except Exception as e:
         if process:
             try:
@@ -297,17 +330,18 @@ def render_and_concat_all(
                 "render",
                 str(script_path),
                 *scene_names,
-                f"-q{quality}",
+                # Force low quality on resource-constrained hosts (HF free tier)
+                "-ql" if FORCE_LOW_QUALITY else f"-q{quality}",
                 "--media_dir", str(media_dir),
                 "--verbosity", "WARNING",
             ]
-            
+
             # Explicitly add only non-default flags
             if "--disable_caching" not in cmd:
                 cmd.append("--disable_caching")
-            
-            # Add performance optimizations
-            if quality == "l":
+
+            # Low quality: reduce frame rate further to cut render time in half
+            if quality == "l" or FORCE_LOW_QUALITY:
                 cmd.extend(["--frame_rate", "15"])
             
             # Execute Manim rendering
