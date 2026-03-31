@@ -130,8 +130,9 @@ CRITICAL RULES:
       and will time out (each frame takes 5-7 seconds × 60+ frames = timeout)
     - **NEVER use `run_time > 3`** — keep every self.play() call to run_time ≤ 3 seconds
     - **NEVER create more than 12 objects in a VGroup** — use ParametricFunction for smooth curves
-    - **For any rotating/spinning animation**: use `obj.animate.rotate(angle)` in a short play()
+    - **For any rotating/spinning animation**: use `obj.animate.rotate(angle, axis=UP)` in a short play()
       rather than `Rotate(obj, angle)` which is frame-by-frame heavy
+    - **Forbidden rotate params**: NEVER use `about_axis=` inside rotate(). It causes an ERROR. Use `axis=`.
     - **For helical/spiral shapes**: use ONE `ParametricFunction`, not many discrete objects
 
 CORRECT DNA HELIX PATTERN (fast, renders in <30s):
@@ -242,6 +243,7 @@ def generate_with_ai(technical_spec: str, max_retries: int = 2) -> Optional[str]
                 last_rejection_reason = (
                     f"Your code used undefined Manim v0.17.3 constants: {forbidden}. "
                     "Use RIGHT instead of X_AXIS, UP instead of Y_AXIS, OUT instead of Z/Z_AXIS. "
+                    "Do NOT use 'about_axis', use 'axis'. "
                     "Do NOT use MathTex, Tex, ShowCreation, or FadeInFrom."
                 )
                 logger.warning(f"AI attempt {attempt}: forbidden constants {forbidden} — retrying")
@@ -299,6 +301,8 @@ _FORBIDDEN_MANIM_NAMES = {
     r'\bZ_AXIS\b',    # Z_AXIS → OUT
     r'\bX_AXIS\b',    # X_AXIS → RIGHT
     r'\bY_AXIS\b',    # Y_AXIS → UP
+    # Bad Parameters
+    r'\babout_axis\b',# about_axis → axis
     # Old Manim API
     r'\bShowCreation\b',
     r'\bFadeInFrom\b',
