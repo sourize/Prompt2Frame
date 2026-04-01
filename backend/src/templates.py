@@ -38,16 +38,18 @@ class GeneratedScene(Scene):
 
 TEMPLATE_PENDULUM = """from manim import *
 
-class GeneratedScene(Scene):
+class GeneratedScene(MovingCameraScene):
     def construct(self):
-        pivot = Dot(UP * 2, color=WHITE)
-        rod = Line(UP * 2, ORIGIN, color=WHITE)
-        bob = Circle(radius=0.3).move_to(ORIGIN).set_color(BLUE).set_fill(BLUE, opacity=1)
+        pivot = Dot(UP * 2.5, color=WHITE)
+        rod = Line(UP * 2.5, DOWN * 0.5, color=WHITE)
+        bob = Circle(radius=0.3).move_to(DOWN * 0.5).set_color(BLUE).set_fill(BLUE, opacity=1)
 
         pendulum = VGroup(rod, bob)
+        pendulum.move_to(ORIGIN)
 
         self.add(pivot)
         self.play(Create(pendulum), run_time=1)
+        self.play(self.camera.frame.animate.move_to(ORIGIN))
 
         self.play(
             Rotate(pendulum, angle=PI/6, about_point=pivot.get_center()),
@@ -66,21 +68,22 @@ class GeneratedScene(Scene):
 
 TEMPLATE_NETWORK = """from manim import *
 
-class GeneratedScene(Scene):
+class GeneratedScene(MovingCameraScene):
     def construct(self):
         neuron_radius = 0.25
 
+        # Position layers within visible range, centered
         layer1 = VGroup(*[
-            Circle(radius=neuron_radius).set_color(BLUE).move_to([-3, y, 0])
-            for y in [-1.5, 0, 1.5]
+            Circle(radius=neuron_radius).set_color(BLUE).move_to([-2, y, 0])
+            for y in [-0.8, 0, 0.8]
         ])
         layer2 = VGroup(*[
             Circle(radius=neuron_radius).set_color(GREEN).move_to([0, y, 0])
-            for y in [-1.5, 0, 1.5]
+            for y in [-0.8, 0, 0.8]
         ])
         layer3 = VGroup(*[
-            Circle(radius=neuron_radius).set_color(RED).move_to([3, y, 0])
-            for y in [-1.5, 0, 1.5]
+            Circle(radius=neuron_radius).set_color(RED).move_to([2, y, 0])
+            for y in [-0.8, 0, 0.8]
         ])
 
         connections_1_2 = VGroup(*[
@@ -92,32 +95,40 @@ class GeneratedScene(Scene):
             for n1 in layer2 for n2 in layer3
         ])
 
+        # Zoom out to fit entire network
+        self.play(self.camera.frame.animate.set_width(7))
         self.play(Create(layer1), run_time=1)
         self.play(Create(connections_1_2), run_time=1)
         self.play(Create(layer2), run_time=1)
         self.play(Create(connections_2_3), run_time=1)
         self.play(Create(layer3), run_time=1)
+        # Center camera on network
+        self.play(self.camera.frame.animate.move_to(ORIGIN))
         self.wait(1)
 """
 
 TEMPLATE_GROW = """from manim import *
 
-class GeneratedScene(Scene):
+class GeneratedScene(MovingCameraScene):
     def construct(self):
         circle = Circle(radius=0.5).set_color(BLUE).set_fill(BLUE, opacity=0.5)
+        circle.move_to(ORIGIN)
 
         self.play(Create(circle))
+        self.play(self.camera.frame.animate.move_to(ORIGIN))
         self.play(circle.animate.scale(3), run_time=2)
         self.wait(1)
 """
 
 TEMPLATE_FADE = """from manim import *
 
-class GeneratedScene(Scene):
+class GeneratedScene(MovingCameraScene):
     def construct(self):
         text = Text("Hello Manim!", font_size=48).set_color(YELLOW)
+        text.move_to(ORIGIN)
 
         self.play(Write(text))
+        self.play(self.camera.frame.animate.move_to(ORIGIN))
         self.wait(0.5)
         self.play(FadeOut(text), run_time=2)
         self.wait(1)
@@ -125,11 +136,13 @@ class GeneratedScene(Scene):
 
 TEMPLATE_COLOR = """from manim import *
 
-class GeneratedScene(Scene):
+class GeneratedScene(MovingCameraScene):
     def construct(self):
         square = Square(side_length=2).set_color(BLUE)
+        square.move_to(ORIGIN)
 
         self.play(Create(square))
+        self.play(self.camera.frame.animate.move_to(ORIGIN))
         self.play(square.animate.set_color(RED), run_time=2)
         self.play(square.animate.set_color(GREEN), run_time=2)
         self.wait(1)
@@ -137,12 +150,14 @@ class GeneratedScene(Scene):
 
 TEMPLATE_TEXT = """from manim import *
 
-class GeneratedScene(Scene):
+class GeneratedScene(MovingCameraScene):
     def construct(self):
         title = Text("Animation Title", font_size=48)
         subtitle = Text("A subtitle here", font_size=32).next_to(title, DOWN)
+        title.move_to(ORIGIN)
 
         self.play(Write(title))
+        self.play(self.camera.frame.animate.move_to(ORIGIN))
         self.wait(0.5)
         self.play(Write(subtitle))
         self.wait(1)
@@ -168,14 +183,88 @@ class GeneratedScene(ThreeDScene):
         self.wait(1)
 """
 
+TEMPLATE_SPIRAL = """from manim import *
+import numpy as np
+
+class GeneratedScene(MovingCameraScene):
+    def construct(self):
+        spiral = ParametricFunction(
+            lambda t: np.array([t*np.cos(t), t*np.sin(t), 0])/5,
+            t_range=[0, 4*PI],
+            color=BLUE
+        )
+        self.play(Create(spiral), run_time=3)
+        self.play(self.camera.frame.animate.move_to(ORIGIN))
+        self.wait(1)
+"""
+
+TEMPLATE_STAR = """from manim import *
+import numpy as np
+
+class GeneratedScene(MovingCameraScene):
+    def construct(self):
+        def star_points(n=5, r_outer=1.5, r_inner=0.6):
+            angles = np.linspace(0, 2*np.pi, n*2, endpoint=False)
+            points = []
+            for i, angle in enumerate(angles):
+                r = r_outer if i % 2 == 0 else r_inner
+                points.append(r * np.array([np.cos(angle), np.sin(angle), 0]))
+            return points
+        star = Polygon(*star_points(), color=YELLOW, stroke_width=2)
+        star.set_fill(YELLOW, opacity=0.5)
+        star.move_to(ORIGIN)
+        self.play(Create(star))
+        self.play(self.camera.frame.animate.move_to(ORIGIN))
+        self.play(star.animate.scale(1.2), run_time=2)
+        self.wait(1)
+"""
+
+TEMPLATE_HEART = """from manim import *
+import numpy as np
+
+class GeneratedScene(MovingCameraScene):
+    def construct(self):
+        heart = ParametricFunction(
+            lambda t: np.array([16*np.sin(t)**3, 13*np.cos(t)-5*np.cos(2*t)-2*np.cos(3*t)-np.cos(4*t), 0])/16,
+            t_range=[0, 2*np.pi],
+            color=RED
+        )
+        heart.set_fill(RED, opacity=0.5)
+        self.play(Create(heart), run_time=2)
+        self.play(self.camera.frame.animate.move_to(ORIGIN))
+        self.play(heart.animate.set_color(PINK), run_time=2)
+        self.wait(1)
+"""
+
+TEMPLATE_HEXAGON = """from manim import *
+import numpy as np
+
+class GeneratedScene(MovingCameraScene):
+    def construct(self):
+        def hexagon(center, size=0.5):
+            angles = np.linspace(0, 2*np.pi, 7)[:-1]
+            points = [center + size * np.array([np.cos(a), np.sin(a), 0]) for a in angles]
+            return Polygon(*points, color=BLUE)
+        
+        hexagons = VGroup(*[
+            hexagon(np.array([i*0.9, j*0.78, 0]))
+            for i in range(-2, 3)
+            for j in range(-2, 3)
+        ])
+        self.play(self.camera.frame.animate.set_width(6))
+        self.play(Create(hexagons), run_time=2)
+        self.play(self.camera.frame.animate.move_to(ORIGIN))
+        self.wait(1)
+"""
+
 TEMPLATE_FALLBACK = """from manim import *
 
-class GeneratedScene(Scene):
+class GeneratedScene(MovingCameraScene):
     def construct(self):
         circle = Circle(radius=1.0).set_color(BLUE)
-        text = Text("Animation", font_size=36).next_to(circle, UP)
-
-        self.play(Create(circle), Write(text))
+        circle.move_to(ORIGIN)
+        self.play(Create(circle))
+        self.play(self.camera.frame.animate.move_to(ORIGIN))
         self.play(circle.animate.scale(1.5), run_time=2)
         self.wait(1)
 """
@@ -247,12 +336,15 @@ def TEMPLATE_TRANSFORMATION_SMART(technical_spec: str) -> str:
 
     return (
         "from manim import *\n\n"
-        "class GeneratedScene(Scene):\n"
+        "class GeneratedScene(MovingCameraScene):\n"
         "    def construct(self):\n"
-        f"{source_code}\n\n"
-        f"{target_code}\n\n"
+        f"{source_code}\n"
+        f"        source.move_to(ORIGIN)\n\n"
+        f"{target_code}\n"
+        f"        target.move_to(ORIGIN)\n\n"
         "        # Step 1: draw source shape\n"
         "        self.play(Create(source))\n"
+        "        self.play(self.camera.frame.animate.move_to(ORIGIN))\n"
         "        self.wait(0.5)\n\n"
         "        # Step 2: transform into target shape\n"
         "        self.play(ReplacementTransform(source, target))\n"
@@ -271,7 +363,7 @@ def TEMPLATE_PLOT_SMART(technical_spec: str) -> str:
 
     return """from manim import *
 
-class GeneratedScene(Scene):
+class GeneratedScene(MovingCameraScene):
     def construct(self):
         axes = Axes(
             x_range=[-3, 3, 1],
@@ -287,6 +379,7 @@ class GeneratedScene(Scene):
 
         self.play(Create(axes), Write(x_label), Write(y_label))
         self.play(Create(graph), Write(graph_label))
+        self.play(self.camera.frame.animate.move_to(ORIGIN))
         self.wait(2)
 """
 
@@ -379,6 +472,30 @@ TEMPLATE_REGISTRY: Dict[str, Dict] = {
         "animation_types": ["3d", "three-dimensional", "rotating 3d"],
         "code": TEMPLATE_3D_ROTATE,
         "description": "3D object rotation",
+    },
+    "spiral": {
+        "keywords": ["spiral", "helix", "curl", "swirl", "spiral animation"],
+        "animation_types": ["parametric curve", "spiral", "curved path"],
+        "code": TEMPLATE_SPIRAL,
+        "description": "Spiral/parametric curve animation",
+    },
+    "star": {
+        "keywords": ["star", "stars", "5-point star", "polygon star", "star shape"],
+        "animation_types": ["star shape", "polygon animation"],
+        "code": TEMPLATE_STAR,
+        "description": "Star shape animation",
+    },
+    "heart": {
+        "keywords": ["heart", "love", "heart shape", "heartbeat", "pulsing heart"],
+        "animation_types": ["heart shape", "heart animation", "pulse"],
+        "code": TEMPLATE_HEART,
+        "description": "Heart shape with pulsing animation",
+    },
+    "hexagon": {
+        "keywords": ["hexagon", "hexagonal", "honeycomb", "grid of hexagons"],
+        "animation_types": ["hexagonal grid", "pattern", "geometric pattern"],
+        "code": TEMPLATE_HEXAGON,
+        "description": "Hexagonal grid pattern",
     },
 }
 
