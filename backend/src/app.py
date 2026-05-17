@@ -218,19 +218,46 @@ class EnhancedResourceGuard(BaseHTTPMiddleware):
         self.max_concurrent = 2
 
     async def dispatch(self, request: Request, call_next):
-        # Skip health and metrics endpoints and OPTIONS
+        # Skip health, metrics, OPTIONS, and static file serving
         if (
             request.url.path in ["/", "/health", "/metrics"]
             or request.method == "OPTIONS"
+            or request.url.path.startswith("/media/")
         ):
             return await call_next(request)
 
         start_time = time.time()
 
+        # Rate limiting: max concurrent requests (always checked)
+        if app_state["active_requests"] >= self.max_concurrent:
+            logger.warning("Too many concurrent requests")
+            return JSONResponse(
+                {
+                    "error": "Too many concurrent requests",
+                    "active_requests": app_state["active_requests"],
+                    "retry_after": self.cooldown,
+                },
+                status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+                headers={"Retry-After": str(self.cooldown)},
+            )
+
         # Throttle CPU/memory checks
         current_time = time.time()
         if current_time - self.last_check < self.cooldown:
-            return await call_next(request)
+            app_state["active_requests"] += 1
+            app_state["total_requests"] += 1
+            try:
+                response = await call_next(request)
+                elapsed = time.time() - start_time
+                response.headers["X-Response-Time"] = f"{elapsed:.3f}s"
+                return response
+            except Exception as e:
+                app_state["failed_requests"] += 1
+                logger.error(f"Request failed: {str(e)}")
+                raise
+            finally:
+                app_state["active_requests"] -= 1
+
         self.last_check = current_time
 
         # Resource checks
@@ -258,19 +285,6 @@ class EnhancedResourceGuard(BaseHTTPMiddleware):
                     "retry_after": self.cooldown,
                 },
                 status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-                headers={"Retry-After": str(self.cooldown)},
-            )
-
-        # Rate limiting: max concurrent requests
-        if app_state["active_requests"] >= self.max_concurrent:
-            logger.warning("Too many concurrent requests")
-            return JSONResponse(
-                {
-                    "error": "Too many concurrent requests",
-                    "active_requests": app_state["active_requests"],
-                    "retry_after": self.cooldown,
-                },
-                status_code=status.HTTP_429_TOO_MANY_REQUESTS,
                 headers={"Retry-After": str(self.cooldown)},
             )
 

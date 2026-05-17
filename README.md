@@ -1,161 +1,144 @@
-# Prompt2Frame 🎬✨
+# Prompt2Frame
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
-[![FastAPI](https://img.shields.io/badge/Backend-FastAPI-009688?style=flat&logo=fastapi&logoColor=white)](https://fastapi.tiangolo.com)
-[![React](https://img.shields.io/badge/Frontend-React-61DAFB?style=flat&logo=react&logoColor=black)](https://reactjs.org)
-[![Manim](https://img.shields.io/badge/Engine-Manim-ecec4f?style=flat&logo=python&logoColor=black)](https://github.com/ManimCommunity/manim)
-[![Groq](https://img.shields.io/badge/AI-Groq-f55036?style=flat&logo=groq&logoColor=white)](https://groq.com)
-[![Vercel](https://img.shields.io/badge/Deploy-Vercel-000000?style=flat&logo=vercel&logoColor=white)](https://vercel.com)
+[![FastAPI](https://img.shields.io/badge/Backend-FastAPI-009688?logo=fastapi)](https://fastapi.tiangolo.com)
+[![React](https://img.shields.io/badge/Frontend-React-61DAFB?logo=react)](https://reactjs.org)
+[![Manim](https://img.shields.io/badge/Engine-Manim-ecec4f?logo=python)](https://github.com/ManimCommunity/manim)
+[![Groq](https://img.shields.io/badge/AI-Groq-f55036?logo=groq)](https://groq.com)
 
-**Prompt2Frame** is an AI-powered animation generator that transforms natural language descriptions into stunning, mathematical 2D animations. It leverages the power of Large Language Models (LLM) and the Manim engine to bring your ideas to life instantly.
-
----
-
-## 🚀 Key Features
-
-### 🎨 **AI-Driven Creativity**
-- **Text-to-Animation**: Just describe what you want (e.g., "A red circle morphing into a blue square"), and watch it happen.
-- **Smart Prompt Expansion**: Vague ideas are automatically expanded into detailed, technically accurate animation scripts.
-- **Code Generation**: Uses Groq's high-speed LLMs (Llama 3) to generate error-free Manim Python code.
-
-### ⚡ **High Performance & Security**
-- **Smart Caching**: 
-  - **Instant Replay**: Caches generated videos (7-day TTL) for sub-second responses to duplicate requests.
-  - **Prompt Cache**: Caches expanded prompts (24h TTL) to save API costs and time.
-- **Secure Proxy**: Built-in Vercel Serverless Proxy (`api/generate.js`) to securely communicate with private backends without exposing tokens.
-- **Enhanced Safety**:
-  - **Anti-Overlap Logic**: Smart prompting ensures text doesn't overlap with shapes.
-  - **Input Sanitization**: Extensive validation to block malicious code.
-
-### 📱 **Modern UI/UX**
-- **Professional Design**: Engineering-focused aesthetic with serif typography and grid patterns.
-- **Responsive Interface**: Works beautifully on mobile with optimized footer and controls.
-- **Interactive Player**: Integrated video player with download capabilities.
+**Prompt2Frame** transforms natural language descriptions into 2D mathematical animations using AI-powered Manim code generation. Describe what you want in plain English—"a red circle morphing into a blue square"—and the system handles prompt enrichment, code generation, validation, rendering, and caching.
 
 ---
 
-## 🏗️ Architecture
+## Architecture
 
-Prompt2Frame uses a separated frontend-backend architecture with a secure proxy layer for deployment.
+A separated frontend-backend architecture with an optional Vercel serverless proxy layer for secure Hugging Face Spaces access.
 
 ```
 prompt2frame/
-├── backend/                 # FastAPI Service (Private/Hugging Face)
-│   ├── src/                 # Core Logic (App, Generator, Executor)
-│   └── media/               # Generated Video Storage
+├── backend/                         # Python/FastAPI service
+│   ├── src/
+│   │   ├── app.py                   # FastAPI app, routes, middleware, CORS
+│   │   ├── config.py                # Pydantic-validated settings (env)
+│   │   ├── generator.py             # Groq LLM → Manim code generation
+│   │   ├── executor.py              # Manim subprocess rendering + ffmpeg
+│   │   ├── prompt_expander.py       # LLM-based prompt enrichment
+│   │   ├── validation.py            # Input sanitization, code security
+│   │   ├── cache.py                 # In-memory prompt + filesystem video cache
+│   │   ├── rate_limiter.py          # Sliding-window per-IP rate limiting
+│   │   ├── circuit_breaker.py       # Circuit breaker for Groq API
+│   │   ├── errors.py                # Structured error responses w/ correlation IDs
+│   │   ├── templates.py             # Static Manim templates + smart template functions
+│   │   └── template_helpers.py      # Parameter extraction for template customization
+│   ├── media/videos/                # Generated video storage
+│   ├── Dockerfile
+│   ├── requirements.txt
+│   └── .env.example
 │
-├── frontend/                # React Application (Vercel)
-│   ├── api/                 # Serverless Proxies
-│   │   ├── generate.js      # Securely adds HF_TOKEN to requests
-│   │   └── media.js         # Proxies video streams securely
-│   └── src/                 # UI Components (Header, SearchInterface)
+├── frontend/                        # React 18 + Vite + TypeScript
+│   ├── api/                         # Vercel serverless proxy functions
+│   │   ├── generate.js              # Proxies /generate with HF_TOKEN
+│   │   └── media.js                 # Proxies video streams securely
+│   └── src/
+│       ├── components/              # Header, SearchInterface, SuggestedQuestions
+│       ├── pages/Index.tsx          # Main page (particle bg, footer, header)
+│       └── lib/                     # Utilities
 │
-└── requirements.txt         # Backend Dependencies
+└── README.md
 ```
 
----
+## Tech Stack
 
-## 🛠️ Tech Stack
+| Layer | Technology |
+|-------|-----------|
+| **Backend** | Python 3.10+, FastAPI, Manim Community v0.17.3, Groq SDK (llama-3.3-70b-versatile) |
+| **Frontend** | React 18, Vite, TypeScript, Tailwind CSS, Framer Motion, shadcn/ui, TanStack Query |
+| **Deployment** | Vercel (frontend + proxy), Hugging Face Spaces / Railway / Render (backend) |
+| **Infrastructure** | FFmpeg, uvicorn, gunicorn, Docker |
 
-- **Backend**: Python 3.10+, FastAPI, Manim Community v0.17+, Groq SDK
-- **Frontend**: React 18, Vite, Tailwind CSS, Framer Motion
-- **Deployment**: Vercel (Frontend + Proxy), Hugging Face Spaces (Backend)
+## Key Features
 
----
+- **AI Code Generation**: Groq-powered Manim code generation with multi-stage prompting (intent analysis → code generation), syntax validation via AST parsing, and a self-healing loop that feeds render errors back to the LLM
+- **Self-Healing Pipeline**: If Manim rendering fails, the error + broken code are sent back to the LLM for automatic correction (up to 2 retries)
+- **Two-Tier Caching**: In-memory LRU cache for prompt expansions (24h TTL, 100 entries) + filesystem video cache with metadata tracking (7-day TTL)
+- **Smart Prompt Expansion**: Short prompts (<200 chars) are enriched with spatial/timing context via LLM; detailed prompts pass through unchanged
+- **Security**: Input sanitization (null bytes, control chars), dangerous pattern blocking (file I/O, network, subprocess), code security validation before execution, IP spoofing protection (X-Forwarded-For takes last entry)
+- **Resilience**: Circuit breaker for Groq API (5 failures → 60s cooldown), sliding-window rate limiting (5 req/min, 20 req/hr per IP), CPU/memory/concurrency resource guard
+- **Animation Templates**: 13 pre-built Manim templates (bounce, pendulum, neural network, spiral, heart, etc.) with smart parameter extraction for color/shape customization
+- **Secure Proxy**: Vercel serverless functions inject `Authorization: Bearer <HF_TOKEN>` server-side, never exposing tokens to the client
 
-## 🚦 Getting Started
+## Setup
 
 ### Prerequisites
-- **Python 3.10+** (Required for Manim)
-- **Node.js 18+** & npm
-- **FFmpeg** (Must be installed and in system PATH)
-- **Groq API Key** (Get one for free at [console.groq.com](https://console.groq.com))
 
-### 1. Backend Setup
+- Python 3.10+
+- Node.js 18+
+- FFmpeg (in system PATH)
+- Groq API key (free at https://console.groq.com)
+
+### Backend
 
 ```bash
-# 1. Clone the repository
-git clone https://github.com/sourize/prompt2frame.git
-cd prompt2frame/backend
-
-# 2. Create virtual environment
-python -m venv venv
-# Windows:
-venv\Scripts\activate
-# Mac/Linux:
-source venv/bin/activate
-
-# 3. Install dependencies
+cd backend
+python -m venv venv && source venv/bin/activate  # or venv\Scripts\activate on Windows
 pip install -r requirements.txt
-
-# 4. Configure Environment (.env)
-GROQ_API_KEY=your_groq_api_key_here
-PORT=5000
-DEBUG=true
+cp .env.example .env
+# Edit .env: set GROQ_API_KEY, PORT=5000, ALLOWED_ORIGINS=http://localhost:5173
+uvicorn src.app:app --reload --port 5000
 ```
 
-### 2. Frontend Setup
+### Frontend
 
 ```bash
-# 1. Go to frontend directory
-cd ../frontend
-
-# 2. Install dependencies
+cd frontend
 npm install
-
-# 3. Configure Environment (.env)
-# Point to your local backend OR Vercel proxy location
-VITE_BACKEND_URL=http://localhost:5000 
-# Note: For production features like Private HF Access, deploy to Vercel.
-
-# 4. Start Development Server
+cp .env.example .env
+# Edit .env: set VITE_BACKEND_URL=http://localhost:5000
 npm run dev
 ```
 
-### 3. Deploying to Vercel (Secure Private Access)
+### Production (Vercel + Hugging Face Spaces)
 
-If you are using a Private Hugging Face Space for the backend, you must configure your Vercel project Environment Variables:
+1. Deploy backend to Hugging Faces Spaces (or Railway/Render)
+2. Set `VITE_BACKEND_URL` to your HF Space URL in Vercel environment variables
+3. If the Space is private, set `HF_TOKEN` in Vercel secrets
+4. The `api/` proxy functions automatically attach the token to each request
 
-| Variable | Description |
-| :--- | :--- |
-| `VITE_BACKEND_URL` | URL of your backend (e.g., `https://your-space.hf.space`) |
-| `HF_TOKEN` | Your Private Hugging Face Access Token |
+## API
 
-The included `api/` proxy functions will automatically attach this token to requests, keeping it safe from the client-side.
+| Endpoint | Method | Description |
+|----------|--------|-------------|
+| `/` | GET | Service status + docs link |
+| `/health` | GET | Comprehensive health check (Groq, FFmpeg, disk, cache, circuit breaker) |
+| `/ready` | GET | Kubernetes readiness probe (200 if operational, 503 otherwise) |
+| `/metrics` | GET | App and system metrics (requests, CPU, memory, disk) |
+| `/generate` | POST | Generate animation from prompt |
+| `/media/videos/{path}` | GET | Static file serving for generated videos |
 
----
+### POST /generate
 
-## 🧪 Testing & Validation
+```json
+{
+  "prompt": "A red circle transforming into a blue square",
+  "quality": "m",
+  "timeout": 150
+}
+```
 
-- **Health Check**: `GET /health` - Verifies API status.
-- **Constraints**: The UI includes notifications about free-tier limitations (concurrency, timeouts) to manage user expectations.
+Response:
+```json
+{
+  "videoUrl": "/media/videos/<run_id>/output.mp4",
+  "renderTime": 12.34,
+  "codeLength": 892,
+  "expandedPrompt": "...",
+  "generationMethod": "ai"
+}
+```
 
----
+## Known Constraints
 
-## 🤝 Contributing
-
-Contributions are welcome! Please feel free to submit a Pull Request.
-
-1. Fork the repository
-2. Create your feature branch (`git checkout -b feature/AmazingFeature`)
-3. Commit your changes (`git commit -m 'Add some AmazingFeature'`)
-4. Push to the branch (`git push origin feature/AmazingFeature`)
-5. Open a Pull Request
-
----
-
-## 📝 License
-
-This project is licensed under the **MIT License** - see the [LICENSE](LICENSE) file for details.
-
----
-
-## 👨‍💻 Author
-
-**Sourish**
-- 🌐 [Portfolio](https://sourish.me)
-- 𝕏 [Twitter/X](https://x.com/sourize_)
-
----
-
-Made with ❤️ and 🤖 using Prompt2Frame
+- Free-tier HF Spaces: 0.1 CPU, 2 concurrent requests max, renders capped at 120s
+- `FORCE_LOW_QUALITY=1` recommended for free-tier (480p, 15fps)
+- LaTeX not installed — use `Text()` instead of `MathTex()`/`Tex()`
+- Manim subprocess has a hard 120s timeout (configurable via `MANIM_TIMEOUT_SECONDS`)
